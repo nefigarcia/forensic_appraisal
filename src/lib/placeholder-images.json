@@ -1,3 +1,16 @@
 {
-  "placeholderImages": []
+  "placeholderImages": [
+    {
+      "id": "appraisal-hero",
+      "description": "Professional office setting with financial documents and a tablet.",
+      "imageUrl": "https://picsum.photos/seed/valuvault1/1200/600",
+      "imageHint": "professional office"
+    },
+    {
+      "id": "team-collab",
+      "description": "Group of professionals discussing a valuation report.",
+      "imageUrl": "https://picsum.photos/seed/valuvault2/800/600",
+      "imageHint": "team meeting"
+    }
+  ]
 }
