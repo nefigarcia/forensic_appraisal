@@ -1,0 +1,135 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum CaseStatus {
+  DRAFT
+  ANALYSIS
+  REVIEW
+  COMPLETED
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+  cases     Case[]
+}
+
+model User {
+  id             String       @id @default(cuid())
+  email          String       @unique
+  name           String?
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model Case {
+  id             String         @id @default(cuid())
+  title          String
+  clientName     String
+  industry       String?
+  status         CaseStatus     @default(DRAFT)
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+  organizationId String
+  documents      Document[]
+  statements     FinancialStatement[]
+  industryCodes  IndustryCode[]
+  valuationModels ValuationModel[]
+  chatSessions   ChatSession[]
+  reports        Report[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model Document {
+  id        String   @id @default(cuid())
+  fileName  String
+  fileUrl   String
+  fileType  String
+  status    String   @default("PENDING") // PENDING, PROCESSED, ERROR
+  case      Case     @relation(fields: [caseId], references: [id])
+  caseId    String
+  createdAt DateTime @default(now())
+}
+
+model FinancialStatement {
+  id        String              @id @default(cuid())
+  type      String              // INCOME_STATEMENT, BALANCE_SHEET, TAX_RETURN
+  year      String
+  case      Case                @relation(fields: [caseId], references: [id])
+  caseId    String
+  lineItems FinancialLineItem[]
+}
+
+model FinancialLineItem {
+  id          String           @id @default(cuid())
+  statement   FinancialStatement @relation(fields: [statementId], references: [id])
+  statementId String
+  name        String
+  category    String           // REVENUE, COGS, ASSET, LIABILITY
+  values      FinancialValue[]
+}
+
+model FinancialValue {
+  id         String            @id @default(cuid())
+  lineItem   FinancialLineItem @relation(fields: [lineItemId], references: [id])
+  lineItemId String
+  value      Float?
+  year       String
+  currency   String            @default("USD")
+}
+
+model IndustryCode {
+  id          String @id @default(cuid())
+  type        String // NAICS, SIC
+  code        String
+  description String?
+  case        Case   @relation(fields: [caseId], references: [id])
+  caseId      String
+}
+
+model ValuationModel {
+  id              String @id @default(cuid())
+  ebitda          Float
+  multiplier      Float
+  growthRate      Float
+  calculatedValue Float
+  case            Case   @relation(fields: [caseId], references: [id])
+  caseId          String
+  createdAt       DateTime @default(now())
+}
+
+model ChatSession {
+  id        String        @id @default(cuid())
+  case      Case          @relation(fields: [caseId], references: [id])
+  caseId    String
+  messages  ChatMessage[]
+  createdAt DateTime      @default(now())
+}
+
+model ChatMessage {
+  id        String      @id @default(cuid())
+  session   ChatSession @relation(fields: [sessionId], references: [id])
+  sessionId String
+  role      String      // USER, ASSISTANT
+  content   String      @db.Text
+  createdAt DateTime    @default(now())
+}
+
+model Report {
+  id          String   @id @default(cuid())
+  case        Case     @relation(fields: [caseId], references: [id])
+  caseId      String
+  fileUrl     String
+  generatedAt DateTime @default(now())
+}
