@@ -18,7 +18,10 @@ import {
   BarChart4,
   Zap,
   Calculator,
-  Database
+  Database,
+  CloudDownload,
+  UploadCloud,
+  HardDrive
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
@@ -47,6 +50,13 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 export default function ProjectDetail() {
   const { id } = useParams()
@@ -165,29 +175,93 @@ export default function ProjectDetail() {
                   Upload Source
                 </Button>
               </DialogTrigger>
-              <DialogContent>
-                <form onSubmit={handleUpload}>
-                  <DialogHeader>
-                    <DialogTitle>Add Forensic Evidence</DialogTitle>
-                    <DialogDescription>Attach a document to the matter's custody binder.</DialogDescription>
-                  </DialogHeader>
-                  <div className="grid gap-4 py-4">
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="name" className="text-right">File Name</Label>
-                      <Input id="name" name="name" placeholder="Tax_Return_2023.pdf" className="col-span-3" required />
+              <DialogContent className="sm:max-w-[500px]">
+                <DialogHeader>
+                  <DialogTitle>Add Forensic Evidence</DialogTitle>
+                  <DialogDescription>Attach documents to the matter's custody binder for audit verification.</DialogDescription>
+                </DialogHeader>
+                
+                <Tabs defaultValue="local" className="mt-4">
+                  <TabsList className="grid w-full grid-cols-2 bg-muted/50 p-1 rounded-xl">
+                    <TabsTrigger value="local" className="text-[10px] font-bold uppercase tracking-widest">
+                      <HardDrive className="h-3.5 w-3.5 mr-2" />
+                      Local Binder
+                    </TabsTrigger>
+                    <TabsTrigger value="cloud" className="text-[10px] font-bold uppercase tracking-widest">
+                      <CloudDownload className="h-3.5 w-3.5 mr-2" />
+                      Cloud Import
+                    </TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="local" className="mt-6">
+                    <form onSubmit={handleUpload} className="space-y-6">
+                      <div className="grid gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="name" className="text-xs font-bold uppercase text-muted-foreground tracking-wider">File Selection</Label>
+                          <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-8 bg-muted/5 hover:bg-muted/10 transition-colors cursor-pointer group">
+                            <UploadCloud className="h-8 w-8 text-muted-foreground group-hover:text-primary transition-colors mb-2" />
+                            <p className="text-xs font-medium text-muted-foreground">Drag and drop or click to browse</p>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="name" className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Display Name</Label>
+                            <Input id="name" name="name" placeholder="e.g. Tax_Return_2023.pdf" required />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="type" className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Document Type</Label>
+                            <Select name="type" defaultValue="Tax Return">
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select type" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Tax Return">Tax Return</SelectItem>
+                                <SelectItem value="Balance Sheet">Balance Sheet</SelectItem>
+                                <SelectItem value="Income Statement">Income Statement</SelectItem>
+                                <SelectItem value="General Ledger">General Ledger</SelectItem>
+                                <SelectItem value="Bank Statement">Bank Statement</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button type="submit" disabled={isUploading} className="w-full bg-primary font-bold uppercase text-xs h-11">
+                          {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <HardDrive className="mr-2 h-4 w-4" />}
+                          Save to Local Binder
+                        </Button>
+                      </DialogFooter>
+                    </form>
+                  </TabsContent>
+                  
+                  <TabsContent value="cloud" className="mt-6">
+                    <div className="space-y-6">
+                      <div className="space-y-4">
+                        <Label className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Available Connectors</Label>
+                        <div className="grid gap-3">
+                          {[
+                            { name: "SharePoint Online", status: "Connected", icon: Database },
+                            { name: "OneDrive Business", status: "Connected", icon: Globe },
+                            { name: "Dropbox Forensic", status: "Disconnected", icon: Database }
+                          ].map((conn) => (
+                            <div key={conn.name} className={`flex items-center justify-between p-4 rounded-xl border ${conn.status === 'Connected' ? 'bg-white cursor-pointer hover:border-primary/50' : 'bg-muted/30 opacity-50 cursor-not-allowed'} transition-all group`}>
+                              <div className="flex items-center gap-3">
+                                <conn.icon className={`h-4 w-4 ${conn.status === 'Connected' ? 'text-primary' : 'text-muted-foreground'}`} />
+                                <span className="text-sm font-bold text-foreground">{conn.name}</span>
+                              </div>
+                              <Badge variant={conn.status === 'Connected' ? 'default' : 'outline'} className="text-[9px] uppercase font-bold px-2 py-0">
+                                {conn.status}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="p-4 bg-muted/20 rounded-xl border border-dashed text-center">
+                        <p className="text-xs font-medium text-muted-foreground">Select a connected source above to browse corporate archive</p>
+                      </div>
                     </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="type" className="text-right">Type</Label>
-                      <Input id="type" name="type" placeholder="Tax Return" className="col-span-3" required />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button type="submit" disabled={isUploading}>
-                      {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                      Save to Binder
-                    </Button>
-                  </DialogFooter>
-                </form>
+                  </TabsContent>
+                </Tabs>
               </DialogContent>
             </Dialog>
           </div>
