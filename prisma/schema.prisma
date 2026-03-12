@@ -1,3 +1,4 @@
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,7 +10,7 @@ datasource db {
 
 model Organization {
   id        String   @id @default(cuid())
-  name      String
+  name      @unique String
   users     User[]
   cases     Case[]
   createdAt DateTime @default(now())
@@ -17,9 +18,9 @@ model Organization {
 
 model User {
   id             String       @id @default(cuid())
-  email          String       @unique
+  email          @unique String
   password       String
-  name           String
+  name           String?
   role           String       @default("USER")
   organization   Organization @relation(fields: [organizationId], references: [id])
   organizationId String
@@ -45,13 +46,13 @@ model Case {
 
 model Document {
   id        String   @id @default(cuid())
+  case      Case     @relation(fields: [caseId], references: [id])
+  caseId    String
   name      String
   type      String
   size      String
-  s3Key     String?  // Stores the path/key in the S3 bucket
+  s3Key     String?
   status    String   @default("PENDING")
-  case      Case     @relation(fields: [caseId], references: [id])
-  caseId    String
   createdAt DateTime @default(now())
 }
 
@@ -60,21 +61,21 @@ model FinancialValue {
   case          Case     @relation(fields: [caseId], references: [id])
   caseId        String
   year          String
-  statementType String
+  statementType String   @default("Income Statement")
   lineItem      String
-  value         Float?
+  value         Float
   currency      String   @default("USD")
+  isVerified    Boolean  @default(false)
   createdAt     DateTime @default(now())
 }
 
 model IndustryClassification {
-  id                String   @id @default(cuid())
-  case              Case     @relation(fields: [caseId], references: [id])
-  caseId            String   @unique
+  id                String  @id @default(cuid())
+  case              Case    @relation(fields: [caseId], references: [id])
+  caseId            String  @unique
   suggestedIndustry String
   naicsCode         String?
   sicCode           String?
-  updatedAt         DateTime @updatedAt
 }
 
 model ValuationModel {

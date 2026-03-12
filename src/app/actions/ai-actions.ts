@@ -25,8 +25,6 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
   const session = await getSession();
   if (!session) throw new Error("Unauthorized");
 
-  // 1. Identify which document to process
-  // Default to the most recent document if no ID is provided
   const doc = await prisma.document.findFirst({
     where: documentId ? { id: documentId } : { caseId },
     orderBy: { createdAt: 'desc' }
@@ -36,7 +34,6 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
     throw new Error("No document found in the custody binder to process.");
   }
 
-  // 2. Fetch the actual file content from S3
   let documentDataUri: string;
   try {
     const command = new GetObjectCommand({
@@ -47,7 +44,6 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
     const buffer = await streamToBuffer(response.Body);
     const base64 = buffer.toString('base64');
     
-    // Determine mime type - Fallback to common types if metadata is missing
     const mimeType = doc.type?.toLowerCase().includes('image') ? 'image/jpeg' : 'application/pdf';
     documentDataUri = `data:${mimeType};base64,${base64}`;
   } catch (error) {
@@ -55,14 +51,12 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
     throw new Error("Failed to retrieve document from secure storage.");
   }
 
-  // 3. Run AI Extraction with real data
   const result = await extractFinancialData({
     documentDataUri,
     documentName: doc.name,
     documentTypeHint: doc.type || "Forensic Financial Summary",
   });
 
-  // 4. Persist extraction results to the MySQL Ledger
   if (result.extractedData && result.extractedData.length > 0) {
     await prisma.financialValue.createMany({
       data: result.extractedData.map((item) => ({
@@ -72,12 +66,38 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
         lineItem: item.lineItem,
         value: item.value || 0,
         currency: item.currency || "USD",
+        isVerified: false
       })),
     });
   }
 
   revalidatePath(`/projects/${caseId}`);
   return result;
+}
+
+export async function updateFinancialValue(id: string, value: number, lineItem: string) {
+  const session = await getSession();
+  if (!session) throw new Error("Unauthorized");
+
+  const updated = await prisma.financialValue.update({
+    where: { id },
+    data: { value, lineItem }
+  });
+
+  revalidatePath(`/projects/${updated.caseId}`);
+  return updated;
+}
+
+export async function approveFinancialValues(caseId: string, statementType: string) {
+  const session = await getSession();
+  if (!session) throw new Error("Unauthorized");
+
+  await prisma.financialValue.updateMany({
+    where: { caseId, statementType },
+    data: { isVerified: true }
+  });
+
+  revalidatePath(`/projects/${caseId}`);
 }
 
 export async function runIndustryAnalysis(caseId: string, description: string) {
