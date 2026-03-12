@@ -1,4 +1,3 @@
-
 'use server';
 
 import { prisma } from "@/lib/prisma";
@@ -49,8 +48,8 @@ export async function addDocument(caseId: string, formData: FormData) {
         name: displayName || file.name,
         type: type || file.type,
         size: fileSize,
+        s3Key: fileKey, // Now correctly persisting the key
         status: "VERIFIED",
-        // We could add an s3Key field to the Prisma schema if we wanted to track it specifically
       },
     });
 

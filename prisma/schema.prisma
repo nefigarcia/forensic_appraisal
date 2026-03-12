@@ -1,4 +1,3 @@
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,103 +7,83 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  users     User[]
+  cases     Case[]
+  createdAt DateTime @default(now())
+}
+
 model User {
   id             String       @id @default(cuid())
   email          String       @unique
   password       String
-  name           String?
-  role           String       @default("VIEWER")
-  organizationId String
+  name           String
+  role           String       @default("USER")
   organization   Organization @relation(fields: [organizationId], references: [id])
+  organizationId String
   createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  AuditLog       AuditLog[]
-}
-
-model Organization {
-  id        String   @id @default(cuid())
-  name      String
-  plan      String   @default("SOLO")
-  users     User[]
-  cases     Case[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 }
 
 model Case {
-  id             String                 @id @default(cuid())
+  id             String       @id @default(cuid())
   name           String
   client         String
-  status         String                 @default("ACTIVE")
   type           String
   manager        String
+  status         String       @default("ACTIVE")
+  organization   Organization @relation(fields: [organizationId], references: [id])
   organizationId String
-  organization   Organization           @relation(fields: [organizationId], references: [id])
   documents      Document[]
   financialData  FinancialValue[]
   industry       IndustryClassification?
   valuationModels ValuationModel[]
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
-  AuditLog       AuditLog[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 }
 
 model Document {
   id        String   @id @default(cuid())
   name      String
-  size      String
   type      String
-  status    String   @default("UPLOADED")
-  url       String?
-  caseId    String
+  size      String
+  s3Key     String?  // Stores the path/key in the S3 bucket
+  status    String   @default("PENDING")
   case      Case     @relation(fields: [caseId], references: [id])
+  caseId    String
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 }
 
 model FinancialValue {
   id            String   @id @default(cuid())
+  case          Case     @relation(fields: [caseId], references: [id])
+  caseId        String
   year          String
   statementType String
   lineItem      String
   value         Float?
   currency      String   @default("USD")
-  caseId        String
-  case          Case     @relation(fields: [caseId], references: [id])
   createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
 }
 
 model IndustryClassification {
-  id                String @id @default(cuid())
+  id                String   @id @default(cuid())
+  case              Case     @relation(fields: [caseId], references: [id])
+  caseId            String   @unique
   suggestedIndustry String
   naicsCode         String?
   sicCode           String?
-  caseId            String @unique
-  case              Case   @relation(fields: [caseId], references: [id])
-  createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
 
 model ValuationModel {
-  id         String   @id @default(cuid())
-  name       String
-  ebitda     Float
-  multiplier Float
-  growthRate Float
-  value      Float
-  caseId     String
-  case       Case     @relation(fields: [caseId], references: [id])
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-}
-
-model AuditLog {
-  id        String   @id @default(cuid())
-  action    String
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  caseId    String?
-  case      Case?    @relation(fields: [caseId], references: [id])
-  createdAt DateTime @default(now())
+  id            String   @id @default(cuid())
+  case          Case     @relation(fields: [caseId], references: [id])
+  caseId        String
+  ebitda        Float
+  multiplier    Float
+  growthRate    Float
+  valuationType String
+  createdAt     DateTime @default(now())
 }
