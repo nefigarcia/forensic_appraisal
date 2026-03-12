@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -5,8 +6,6 @@ import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/s
 import { AppSidebar } from "@/components/app-sidebar"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { 
   Database, 
   CheckCircle2, 
@@ -14,17 +13,11 @@ import {
   ShieldCheck, 
   AlertCircle,
   Loader2,
-  Lock
+  Lock,
+  RefreshCcw
 } from "lucide-react"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
 import { toast } from "@/hooks/use-toast"
+import { getExternalConnections } from "@/app/actions/connectors"
 
 type Connector = {
   id: string
@@ -33,52 +26,73 @@ type Connector = {
   sync: string
   type: string
   color: string
+  provider: "microsoft" | "google" | "custom"
 }
 
-const initialSources: Connector[] = [
-  { id: "sp", name: "SharePoint Online", status: "Connected", sync: "2 mins ago", type: "Custody Storage", color: "bg-green-100 text-green-700" },
-  { id: "od", name: "OneDrive Business", status: "Connected", sync: "1 hour ago", type: "Archive Storage", color: "bg-green-100 text-green-700" },
-  { id: "iw", name: "IbisWorld API", status: "Active", sync: "Premium Sub", type: "Market Benchmarking", color: "bg-blue-100 text-blue-700" },
-  { id: "bvr", name: "BVR DealStats", status: "Error", sync: "Auth Required", type: "Valuation Multiples", color: "bg-red-100 text-red-700" },
+const defaultSources: Connector[] = [
+  { id: "sp", name: "SharePoint Online", status: "Disconnected", sync: "Never", type: "Custody Storage", color: "bg-muted text-muted-foreground", provider: "microsoft" },
+  { id: "od", name: "OneDrive Business", status: "Disconnected", sync: "Never", type: "Archive Storage", color: "bg-muted text-muted-foreground", provider: "microsoft" },
+  { id: "iw", name: "IbisWorld API", status: "Active", sync: "Premium Sub", type: "Market Benchmarking", color: "bg-blue-100 text-blue-700", provider: "custom" },
+  { id: "bvr", name: "BVR DealStats", status: "Error", sync: "Auth Required", type: "Valuation Multiples", color: "bg-red-100 text-red-700", provider: "custom" },
 ]
 
 export default function ConnectionsPage() {
-  const [sources, setSources] = React.useState<Connector[]>(initialSources)
-  const [selectedSource, setSelectedSource] = React.useState<Connector | null>(null)
-  const [isConnecting, setIsConnecting] = React.useState(false)
+  const [sources, setSources] = React.useState<Connector[]>(defaultSources)
+  const [loading, setLoading] = React.useState(true)
 
-  const handleConnect = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (!selectedSource) return
+  const loadConnections = React.useCallback(async () => {
+    setLoading(true)
+    try {
+      const connections = await getExternalConnections()
+      const updatedSources = defaultSources.map(source => {
+        const conn = connections.find(c => c.provider === source.provider)
+        if (conn) {
+          return {
+            ...source,
+            status: "Connected" as const,
+            sync: "Real-time active",
+            color: "bg-green-100 text-green-700"
+          }
+        }
+        return source
+      })
+      setSources(updatedSources)
+    } catch (error) {
+      console.error(error)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
-    setIsConnecting(true)
-    // Simulate API Auth flow
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    
-    setSources(prev => prev.map(s => 
-      s.id === selectedSource.id 
-        ? { ...s, status: "Connected" as const, sync: "Just now", color: "bg-green-100 text-green-700" } 
-        : s
-    ))
+  React.useEffect(() => {
+    loadConnections()
+  }, [loadConnections])
 
-    toast({
-      title: "Connection Established",
-      description: `ValuVault is now securely synced with ${selectedSource.name}.`,
-    })
-    
-    setIsConnecting(false)
-    setSelectedSource(null)
+  const handleConnect = (provider: string) => {
+    if (provider === "microsoft") {
+      // Redirect to our internal route that initiates OAuth
+      window.location.href = "/api/connect/microsoft"
+    } else {
+      toast({
+        title: "Coming Soon",
+        description: `The ${provider} connector is currently in final verification.`,
+      })
+    }
   }
 
   return (
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center px-6 border-b bg-white shadow-sm">
+        <header className="flex h-16 shrink-0 items-center justify-between px-6 border-b bg-white shadow-sm">
           <div className="flex items-center gap-4">
             <SidebarTrigger />
             <h1 className="text-xl font-bold font-headline text-primary tracking-tight">Data Connectors</h1>
           </div>
+          <Button variant="outline" size="sm" onClick={loadConnections} disabled={loading}>
+            <RefreshCcw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh Status
+          </Button>
         </header>
         
         <main className="flex-1 p-8 max-w-7xl mx-auto w-full">
@@ -109,11 +123,11 @@ export default function ConnectionsPage() {
                 </CardContent>
                 <CardFooter className="bg-muted/30 pt-4 border-t">
                   <Button 
-                    onClick={() => setSelectedSource(source)}
+                    onClick={() => handleConnect(source.provider)}
                     variant="ghost" 
                     className="w-full text-[10px] font-bold uppercase tracking-widest h-10 hover:bg-white hover:text-accent"
                   >
-                    {source.status === "Error" || source.status === "Disconnected" ? "Sign In & Authorize" : "Manage Connection"}
+                    {source.status === "Connected" ? "Manage Integration" : "Authorize Enterprise Account"}
                     <ExternalLink className="ml-2 h-3.5 w-3.5" />
                   </Button>
                 </CardFooter>
@@ -125,51 +139,13 @@ export default function ConnectionsPage() {
             <div className="mx-auto bg-white p-4 rounded-full w-16 h-16 flex items-center justify-center shadow-md mb-6">
               <ShieldCheck className="h-8 w-8 text-primary" />
             </div>
-            <h3 className="font-bold text-xl text-primary tracking-tight">Need Secure Integration?</h3>
+            <h3 className="font-bold text-xl text-primary tracking-tight">Enterprise Secure Integration</h3>
             <p className="text-sm text-muted-foreground mt-2 mb-8 max-w-md mx-auto font-medium">
-              ValuVault supports enterprise-grade OAuth2 and SSL-encrypted pipelines for over 50+ financial data providers.
+              ValuVault supports real OAuth2 and SSL-encrypted pipelines for enterprise financial data providers.
             </p>
-            <Button className="bg-primary font-bold uppercase text-[11px] tracking-widest px-8 h-12 shadow-lg">Request Custom Connector</Button>
+            <Button className="bg-primary font-bold uppercase text-[11px] tracking-widest px-8 h-12 shadow-lg">View Security Audit Logs</Button>
           </div>
         </main>
-
-        <Dialog open={!!selectedSource} onOpenChange={(open) => !open && setSelectedSource(null)}>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <div className="flex justify-center mb-4">
-                <div className="bg-primary/10 p-4 rounded-full">
-                  <Lock className="h-8 w-8 text-primary" />
-                </div>
-              </div>
-              <DialogTitle className="text-center">Secure Sign-In: {selectedSource?.name}</DialogTitle>
-              <DialogDescription className="text-center">
-                Enter your credentials for {selectedSource?.name} to authorize ValuVault AI access.
-              </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleConnect} className="space-y-6 pt-4">
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="vendor-email" className="text-xs font-bold uppercase tracking-widest">Enterprise Email</Label>
-                  <Input id="vendor-email" type="email" placeholder="name@organization.com" required />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="vendor-pass" className="text-xs font-bold uppercase tracking-widest">Security Credentials</Label>
-                  <Input id="vendor-pass" type="password" placeholder="••••••••" required />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="submit" disabled={isConnecting} className="w-full bg-primary font-bold uppercase text-xs h-12 tracking-widest">
-                  {isConnecting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Authenticating...
-                    </>
-                  ) : "Authorize Connection"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
       </SidebarInset>
     </SidebarProvider>
   )
