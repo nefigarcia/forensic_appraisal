@@ -88,12 +88,12 @@ export async function updateFinancialValue(id: string, value: number, lineItem: 
   return updated;
 }
 
-export async function approveFinancialValues(caseId: string, statementType: string) {
+export async function approveFinancialValues(caseId: string, statementType: string, year: string) {
   const session = await getSession();
   if (!session) throw new Error("Unauthorized");
 
   await prisma.financialValue.updateMany({
-    where: { caseId, statementType },
+    where: { caseId, statementType, year },
     data: { isVerified: true }
   });
 

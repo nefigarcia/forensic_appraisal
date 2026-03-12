@@ -10,18 +10,13 @@ import { Button } from "@/components/ui/button"
 import { 
   FileText, 
   Table as TableIcon, 
-  Search, 
   Plus,
   ArrowLeft,
   Loader2,
   Globe,
-  BarChart4,
-  Zap,
   Calculator,
   Database,
-  CloudDownload,
   UploadCloud,
-  HardDrive,
   FileCheck,
   ImageIcon,
   CheckCircle2,
@@ -78,28 +73,28 @@ export default function ProjectDetail() {
   
   // Ledger State
   const [isEditingLedger, setIsEditingLedger] = React.useState(false)
-  const [activeStatement, setActiveStatement] = React.useState<string | null>(null)
+  const [activeGroupKey, setActiveGroupKey] = React.useState<string | null>(null)
   const [savingId, setSavingId] = React.useState<string | null>(null)
 
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
-  const [isDragging, setIsDragging] = React.useState(false)
 
   const loadData = React.useCallback(async () => {
     try {
       const data = await getCaseDetails(id as string);
       setCaseData(data);
       
-      // Set initial active statement if not set
-      if (data?.financialData?.length > 0 && !activeStatement) {
-        setActiveStatement(data.financialData[0].statementType)
+      // Auto-select first grouping if none selected
+      if (data?.financialData?.length > 0 && !activeGroupKey) {
+        const first = data.financialData[0];
+        setActiveGroupKey(`${first.statementType} - ${first.year}`);
       }
     } catch (e) {
       toast({ title: "Error", description: "Could not load case details", variant: "destructive" });
     } finally {
       setLoading(false);
     }
-  }, [id, activeStatement])
+  }, [id, activeGroupKey])
 
   React.useEffect(() => {
     loadData();
@@ -137,14 +132,39 @@ export default function ProjectDetail() {
   }
 
   const handleApprove = async () => {
-    if (!activeStatement) return
+    if (!activeGroupKey) return
+    const [type, year] = activeGroupKey.split(" - ");
     try {
-      await approveFinancialValues(id as string, activeStatement)
+      await approveFinancialValues(id as string, type, year)
       toast({ title: "Statement Approved", description: "All entries marked as verified." })
       await loadData()
     } catch (error) {
       toast({ title: "Approval Error", variant: "destructive" })
     }
+  }
+
+  const handleExport = () => {
+    if (!currentStatementData.length) return;
+    const headers = ["Line Item", "Year", "Type", "Value", "Currency", "Verified"];
+    const rows = currentStatementData.map((item: any) => [
+      `"${item.lineItem}"`,
+      item.year,
+      `"${item.statementType}"`,
+      item.value,
+      item.currency,
+      item.isVerified ? "Yes" : "No"
+    ]);
+    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${activeGroupKey?.replace(/\s+/g, '_')}_Forensic_Export.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast({ title: "Export Started", description: "Your CSV file is downloading." });
   }
 
   const handleIndustryAnalysis = async () => {
@@ -192,14 +212,16 @@ export default function ProjectDetail() {
   if (loading) return <div className="flex items-center justify-center min-h-screen"><Loader2 className="animate-spin text-primary h-8 w-8" /></div>;
   if (!caseData) return <div className="p-8 text-center">Case not found.</div>;
 
+  // Group by Statement Type AND Year
   const groupedData = caseData.financialData.reduce((acc: any, item: any) => {
-    if (!acc[item.statementType]) acc[item.statementType] = [];
-    acc[item.statementType].push(item);
+    const key = `${item.statementType} - ${item.year}`;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
     return acc;
   }, {});
 
-  const currentStatementData = activeStatement ? groupedData[activeStatement] || [] : [];
-  const statementTypes = Object.keys(groupedData);
+  const currentStatementData = activeGroupKey ? groupedData[activeGroupKey] || [] : [];
+  const groupKeys = Object.keys(groupedData).sort();
 
   return (
     <SidebarProvider>
@@ -347,27 +369,37 @@ export default function ProjectDetail() {
 
             <TabsContent value="analysis">
               <div className="space-y-2 mb-6">
-                <h2 className="text-2xl font-black text-primary tracking-tight">AI Financial Extraction</h2>
-                <p className="text-sm text-muted-foreground font-medium">AI has automatically extracted financial statement data from the uploaded PDFs. Review and export to Excel.</p>
+                <h2 className="text-2xl font-black text-primary tracking-tight">Forensic Financial Ledger</h2>
+                <p className="text-sm text-muted-foreground font-medium">AI has automatically normalized and extracted financial data. Grouped by statement type and year for precise auditing.</p>
               </div>
 
               <div className="grid gap-6 lg:grid-cols-12 items-start">
                 <Card className="lg:col-span-3 border-none shadow-sm overflow-hidden bg-white">
                   <CardHeader className="bg-muted/30 border-b py-4">
-                    <CardTitle className="text-xs font-bold uppercase tracking-widest">Detected Financial Statements</CardTitle>
+                    <CardTitle className="text-xs font-bold uppercase tracking-widest">Detected Statements & Years</CardTitle>
                   </CardHeader>
                   <CardContent className="p-0">
                     <div className="divide-y">
-                      {statementTypes.map((st) => (
-                        <button key={st} onClick={() => setActiveStatement(st)} className={cn("w-full flex items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors", activeStatement === st ? "bg-primary/5 border-l-4 border-primary" : "")}>
-                          <div className="flex items-center gap-3">
-                            <FileSpreadsheet className={cn("h-4 w-4", activeStatement === st ? "text-primary" : "text-muted-foreground")} />
-                            <span className={cn("text-xs font-bold", activeStatement === st ? "text-primary" : "text-muted-foreground")}>{st}</span>
-                          </div>
-                          {groupedData[st].every((i: any) => i.isVerified) && <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
-                        </button>
-                      ))}
-                      {statementTypes.length === 0 && <div className="p-8 text-center text-xs text-muted-foreground">Run extraction to detect statements</div>}
+                      {groupKeys.map((key) => {
+                        const isVerified = groupedData[key].every((i: any) => i.isVerified);
+                        return (
+                          <button 
+                            key={key} 
+                            onClick={() => setActiveGroupKey(key)} 
+                            className={cn("w-full flex items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors", activeGroupKey === key ? "bg-primary/5 border-l-4 border-primary" : "")}
+                          >
+                            <div className="flex items-center gap-3">
+                              <FileSpreadsheet className={cn("h-4 w-4", activeGroupKey === key ? "text-primary" : "text-muted-foreground")} />
+                              <div className="flex flex-col">
+                                <span className={cn("text-[11px] font-bold", activeGroupKey === key ? "text-primary" : "text-muted-foreground")}>{key.split(' - ')[0]}</span>
+                                <span className="text-[9px] font-bold text-muted-foreground opacity-60 uppercase">Year: {key.split(' - ')[1]}</span>
+                              </div>
+                            </div>
+                            {isVerified && <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
+                          </button>
+                        );
+                      })}
+                      {groupKeys.length === 0 && <div className="p-8 text-center text-xs text-muted-foreground">Run extraction to detect statements</div>}
                     </div>
                   </CardContent>
                 </Card>
@@ -376,16 +408,16 @@ export default function ProjectDetail() {
                   <Card className="border-none shadow-sm overflow-hidden bg-white">
                     <CardHeader className="flex flex-row items-center justify-between border-b py-4 bg-muted/10">
                       <div>
-                        <CardTitle className="text-sm font-bold uppercase tracking-widest">Financial Ledger: {activeStatement || "Select Statement"}</CardTitle>
+                        <CardTitle className="text-sm font-bold uppercase tracking-widest">{activeGroupKey || "Select Audit Target"}</CardTitle>
                       </div>
                       <div className="flex items-center gap-2">
                         <Button onClick={handleApprove} variant="outline" size="sm" className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100 text-[10px] font-bold uppercase h-9">
-                          <CheckCircle2 className="mr-2 h-3.5 w-3.5" /> Approve Extraction
+                          <CheckCircle2 className="mr-2 h-3.5 w-3.5" /> Approve Audit
                         </Button>
                         <Button onClick={() => setIsEditingLedger(!isEditingLedger)} variant="outline" size="sm" className="text-[10px] font-bold uppercase h-9">
                           <Edit3 className="mr-2 h-3.5 w-3.5" /> {isEditingLedger ? "Exit Edit" : "Edit Data"}
                         </Button>
-                        <Button variant="outline" size="sm" className="text-[10px] font-bold uppercase h-9">
+                        <Button onClick={handleExport} variant="outline" size="sm" className="text-[10px] font-bold uppercase h-9">
                           <Download className="mr-2 h-3.5 w-3.5" /> Export to Excel
                         </Button>
                       </div>
@@ -395,7 +427,7 @@ export default function ProjectDetail() {
                         <TableHeader className="bg-muted/30">
                           <TableRow>
                             <TableHead className="text-[10px] uppercase font-bold tracking-widest">Line Item / Account</TableHead>
-                            <TableHead className="text-[10px] uppercase font-bold tracking-widest">Year</TableHead>
+                            <TableHead className="text-[10px] uppercase font-bold tracking-widest text-center">Year</TableHead>
                             <TableHead className="text-right text-[10px] uppercase font-bold tracking-widest">Value</TableHead>
                             {isEditingLedger && <TableHead className="w-[100px]"></TableHead>}
                           </TableRow>
@@ -406,7 +438,9 @@ export default function ProjectDetail() {
                               <TableCell className="font-medium">
                                 {isEditingLedger ? <Input defaultValue={item.lineItem} className="h-8 text-xs" id={`li-${item.id}`} /> : item.lineItem}
                               </TableCell>
-                              <TableCell className="text-xs font-bold">{item.year}</TableCell>
+                              <TableCell className="text-center">
+                                <Badge variant="secondary" className="text-[10px] font-bold">{item.year}</Badge>
+                              </TableCell>
                               <TableCell className="text-right font-mono font-bold text-primary">
                                 {isEditingLedger ? <Input type="number" defaultValue={item.value} className="h-8 text-xs text-right w-32 ml-auto" id={`val-${item.id}`} /> : item.value.toLocaleString(undefined, { style: 'currency', currency: item.currency })}
                               </TableCell>
@@ -428,26 +462,11 @@ export default function ProjectDetail() {
                     </CardContent>
                     <CardFooter className="bg-muted/5 py-3 border-t">
                       <div className="flex items-center gap-2 text-[10px] font-bold text-green-600 uppercase tracking-widest">
-                        <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                        Automatically Generated Ledger Sync Active
+                        <CheckCircle2 className="h-3 w-3" />
+                        Forensic Integrity Verified
                       </div>
                     </CardFooter>
                   </Card>
-
-                  <div className="grid gap-6 lg:grid-cols-2">
-                    <Card className="border-none shadow-sm bg-white p-6 flex flex-col items-center text-center space-y-4">
-                      <div className="bg-primary/10 p-4 rounded-full"><FileSpreadsheet className="h-8 w-8 text-primary" /></div>
-                      <div>
-                        <h4 className="font-bold text-sm">{caseData.name}_Financial_Model.xlsx</h4>
-                        <p className="text-[10px] text-muted-foreground uppercase font-bold mt-1">Ready for export • 12.4 MB</p>
-                      </div>
-                      <div className="flex gap-2 w-full">
-                        <Button className="flex-1 text-[10px] font-bold uppercase h-10 px-0"><Download className="mr-2 h-3.5 w-3.5" /> Download</Button>
-                        <Button variant="outline" className="flex-1 text-[10px] font-bold uppercase h-10 px-0"><Send className="mr-2 h-3.5 w-3.5" /> Send to Analyst</Button>
-                      </div>
-                      <Button variant="secondary" className="w-full text-[10px] font-bold uppercase h-10"><Database className="mr-2 h-3.5 w-3.5" /> Open in Spreadsheet</Button>
-                    </Card>
-                  </div>
                 </div>
               </div>
             </TabsContent>
