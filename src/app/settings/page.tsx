@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
+import { Badge } from "@/components/ui/badge"
 import { Bell, Lock, User, Palette, BrainCircuit, ShieldCheck, FileKey } from "lucide-react"
 
 export default function SettingsPage() {
