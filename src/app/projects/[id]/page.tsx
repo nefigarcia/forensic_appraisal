@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from "react"
@@ -22,7 +21,8 @@ import {
   CloudDownload,
   UploadCloud,
   HardDrive,
-  FileCheck
+  FileCheck,
+  ImageIcon
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
@@ -69,7 +69,6 @@ export default function ProjectDetail() {
   const [isUploading, setIsUploading] = React.useState(false)
   const [uploadOpen, setUploadOpen] = React.useState(false)
   
-  // File selection state
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = React.useState(false)
@@ -157,10 +156,8 @@ export default function ProjectDetail() {
     setIsUploading(true)
     const formData = new FormData(e.currentTarget)
     
-    // If we have a selected file, add it to formData
     if (selectedFile) {
       formData.set("file", selectedFile)
-      // If display name is empty, use file name
       if (!formData.get("name")) {
         formData.set("name", selectedFile.name)
       }
@@ -222,7 +219,7 @@ export default function ProjectDetail() {
               <DialogContent className="sm:max-w-[500px]">
                 <DialogHeader>
                   <DialogTitle>Add Forensic Evidence</DialogTitle>
-                  <DialogDescription>Attach documents to the matter's custody binder for audit verification.</DialogDescription>
+                  <DialogDescription>Attach documents or images to the matter's custody binder for audit verification.</DialogDescription>
                 </DialogHeader>
                 
                 <Tabs defaultValue="local" className="mt-4">
@@ -246,6 +243,7 @@ export default function ProjectDetail() {
                             type="file" 
                             className="hidden" 
                             ref={fileInputRef} 
+                            accept=".pdf,.png,.jpg,.jpeg"
                             onChange={handleFileChange}
                           />
                           <div 
@@ -261,14 +259,19 @@ export default function ProjectDetail() {
                           >
                             {selectedFile ? (
                               <>
-                                <FileCheck className="h-8 w-8 text-green-600 mb-2" />
+                                {selectedFile.type.startsWith('image/') ? (
+                                  <ImageIcon className="h-8 w-8 text-green-600 mb-2" />
+                                ) : (
+                                  <FileCheck className="h-8 w-8 text-green-600 mb-2" />
+                                )}
                                 <p className="text-xs font-bold text-green-700">{selectedFile.name}</p>
                                 <p className="text-[10px] text-green-600/70 mt-1 uppercase">Click to change file</p>
                               </>
                             ) : (
                               <>
                                 <UploadCloud className="h-8 w-8 text-muted-foreground group-hover:text-primary transition-colors mb-2" />
-                                <p className="text-xs font-medium text-muted-foreground">Drag and drop or click to browse</p>
+                                <p className="text-xs font-medium text-muted-foreground">PDFs or Images (JPEG/PNG)</p>
+                                <p className="text-[10px] text-muted-foreground/60 uppercase mt-1">Drag and drop or click to browse</p>
                               </>
                             )}
                           </div>
@@ -376,7 +379,7 @@ export default function ProjectDetail() {
                           <div key={doc.id} className="flex items-center justify-between p-4 hover:bg-muted/30 transition-colors group">
                             <div className="flex items-center gap-4">
                               <div className="bg-primary/5 p-2 rounded-lg">
-                                <FileText className="h-5 w-5 text-primary/60" />
+                                {doc.type?.toLowerCase().includes('image') ? <ImageIcon className="h-5 w-5 text-primary/60" /> : <FileText className="h-5 w-5 text-primary/60" />}
                               </div>
                               <div>
                                 <p className="text-sm font-bold text-primary group-hover:text-accent transition-colors">{doc.name}</p>
@@ -411,7 +414,7 @@ export default function ProjectDetail() {
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <p className="text-xs leading-relaxed opacity-80 font-medium">
-                        Standardize financial points directly to the matter ledger.
+                        Standardize financial points directly from PDFs or scanned images to the matter ledger.
                       </p>
                       <Button 
                         onClick={handleExtraction} 

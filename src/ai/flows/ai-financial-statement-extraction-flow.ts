@@ -1,6 +1,6 @@
 'use server';
 /**
- * @fileOverview A Genkit flow for extracting key financial data from various document types.
+ * @fileOverview A Genkit flow for extracting key financial data from various document types, including PDFs and images.
  *
  * - extractFinancialData - A function that handles the financial data extraction process.
  * - FinancialDocumentExtractionInput - The input type for the extractFinancialData function.
@@ -14,7 +14,7 @@ const FinancialDocumentExtractionInputSchema = z.object({
   documentDataUri: z
     .string()
     .describe(
-      "The financial document (e.g., PDF balance sheet, income statement, tax return) as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
+      "The financial document (e.g., PDF, JPEG, or PNG scan) as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
     ),
   documentName: z
     .string()
@@ -82,23 +82,19 @@ const extractFinancialDataPrompt = ai.definePrompt({
       },
     ],
   },
-  prompt: `You are an expert financial data extractor assistant. Your task is to accurately extract key financial data points from various financial documents and present them in a structured, year-by-year format.
+  prompt: `You are an expert financial data extractor assistant specialized in forensic accounting. 
 
-Carefully analyze the provided financial document. Identify all relevant financial line items, their corresponding values, and the year they pertain to. For multi-page documents like tax returns, ensure you capture data from all relevant sections and pages. If you can determine the type of financial statement (e.g., Balance Sheet, Income Statement) for a given data point, include it.
+Your task is to accurately extract key financial data points from the provided document. This document may be a high-quality PDF or a scanned image/photo of a page. You must perform advanced visual analysis and OCR to detect tables, line items, and numeric values.
 
-If the document is identified as a '{{documentTypeHint}}' (or if a document name '{{documentName}}' is provided), pay special attention to extracting data typically found in such documents.
+Carefully analyze the provided financial document:
+1. Identify all relevant financial line items and their values.
+2. Group data by the year it pertains to.
+3. For scanned images, pay close attention to columns and rows to ensure values are mapped to the correct line items.
+4. If you see a multi-page document, process all visible sections.
 
-Structure the output as a JSON array of objects, where each object represents a single financial data point. Each object MUST include 'year', 'statementType', 'lineItem', and 'value'. Include 'unit' and 'currency' if clearly available. 'value' should be a number (float or integer). If a value is negative, represent it as such. If a value is clearly present but cannot be parsed as a number, or if a line item is found but its value is not discernable, set 'value' to null.
+If the document is identified as a '{{documentTypeHint}}' (or if a document name '{{documentName}}' is provided), focus on standard fields expected for that type.
 
-Example Output Structure:
-[
-  {"year": "2023", "statementType": "Income Statement", "lineItem": "Revenue", "value": 1000000, "currency": "USD"},
-  {"year": "2023", "statementType": "Income Statement", "lineItem": "Cost of Goods Sold", "value": 600000, "currency": "USD"},
-  {"year": "2022", "statementType": "Income Statement", "lineItem": "Revenue", "value": 950000, "currency": "USD"},
-  {"year": "2023", "statementType": "Balance Sheet", "lineItem": "Cash", "value": 250000, "currency": "USD"},
-  {"year": "2022", "statementType": "Balance Sheet", "lineItem": "Cash", "value": 200000, "currency": "USD"},
-  {"year": "2023", "statementType": "Tax Return", "lineItem": "Taxable Income", "value": 150000, "currency": "USD"}
-]
+Structure the output as a JSON array of objects. Each object MUST include 'year', 'statementType', 'lineItem', and 'value'. 'value' should be a number. If a value is negative (often in parentheses or marked with a minus sign), represent it as a negative number.
 
 Document for analysis: {{media url=documentDataUri}}`,
 });
