@@ -10,21 +10,24 @@ datasource db {
 
 model Organization {
   id        String   @id @default(cuid())
-  name      @unique String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   users     User[]
   cases     Case[]
-  createdAt DateTime @default(now())
+  connectors ExternalConnector[]
 }
 
 model User {
   id             String       @id @default(cuid())
-  email          @unique String
+  email          String       @unique
   password       String
-  name           String?
+  name           String
   role           String       @default("USER")
-  organization   Organization @relation(fields: [organizationId], references: [id])
   organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
   createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 }
 
 model Case {
@@ -34,8 +37,8 @@ model Case {
   type           String
   manager        String
   status         String       @default("ACTIVE")
-  organization   Organization @relation(fields: [organizationId], references: [id])
   organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
   documents      Document[]
   financialData  FinancialValue[]
   industry       IndustryClassification?
@@ -46,8 +49,8 @@ model Case {
 
 model Document {
   id        String   @id @default(cuid())
-  case      Case     @relation(fields: [caseId], references: [id])
   caseId    String
+  case      Case     @relation(fields: [caseId], references: [id])
   name      String
   type      String
   size      String
@@ -58,10 +61,10 @@ model Document {
 
 model FinancialValue {
   id            String   @id @default(cuid())
-  case          Case     @relation(fields: [caseId], references: [id])
   caseId        String
+  case          Case     @relation(fields: [caseId], references: [id])
   year          String
-  statementType String   @default("Income Statement")
+  statementType String
   lineItem      String
   value         Float
   currency      String   @default("USD")
@@ -71,20 +74,37 @@ model FinancialValue {
 
 model IndustryClassification {
   id                String  @id @default(cuid())
-  case              Case    @relation(fields: [caseId], references: [id])
   caseId            String  @unique
+  case              Case    @relation(fields: [caseId], references: [id])
   suggestedIndustry String
   naicsCode         String?
   sicCode           String?
+  createdAt         DateTime @default(now())
 }
 
 model ValuationModel {
   id            String   @id @default(cuid())
-  case          Case     @relation(fields: [caseId], references: [id])
   caseId        String
+  case          Case     @relation(fields: [caseId], references: [id])
   ebitda        Float
   multiplier    Float
   growthRate    Float
   valuationType String
   createdAt     DateTime @default(now())
+}
+
+model ExternalConnector {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  provider       String       // e.g., "microsoft"
+  accessToken    String?      @db.Text
+  refreshToken   String?      @db.Text
+  expiresAt      DateTime?
+  status         String       @default("CONNECTED")
+  lastSync       DateTime?    @default(now())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, provider])
 }
