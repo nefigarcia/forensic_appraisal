@@ -11,6 +11,12 @@
       "description": "Group of professionals discussing a valuation report.",
       "imageUrl": "https://picsum.photos/seed/valuvault2/800/600",
       "imageHint": "team meeting"
+    },
+    {
+      "id": "financial-data",
+      "description": "Abstract blue representation of data and spreadsheets.",
+      "imageUrl": "https://picsum.photos/seed/valuvault3/800/600",
+      "imageHint": "financial data"
     }
   ]
 }
