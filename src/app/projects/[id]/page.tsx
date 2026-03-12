@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from "react"
@@ -89,19 +90,29 @@ export default function ProjectDetail() {
   }, [loadData]);
 
   const handleExtraction = async () => {
+    if (!caseData?.documents || caseData.documents.length === 0) {
+      toast({
+        title: "No Documents",
+        description: "Please upload a document to the binder first.",
+        variant: "destructive"
+      })
+      return
+    }
+
     setIsExtracting(true)
     try {
-      const mockDataUri = "data:application/pdf;base64,JVBERi0xLjQKJ..." 
-      await runFinancialExtraction(id as string, mockDataUri);
+      // The action now fetches the real data from S3 on the server
+      await runFinancialExtraction(id as string);
       await loadData()
       toast({
         title: "Forensic Extraction Successful",
         description: `Financial values have been persisted to the ledger.`,
       })
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Extraction Error:", error)
       toast({
         title: "Extraction Error",
-        description: "Failed to process document.",
+        description: error.message || "Failed to process document content.",
         variant: "destructive"
       })
     } finally {
