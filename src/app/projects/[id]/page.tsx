@@ -22,7 +22,8 @@ import {
   Database,
   History,
   ShieldAlert,
-  BarChart4
+  BarChart4,
+  Zap
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
