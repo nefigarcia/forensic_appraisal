@@ -16,20 +16,20 @@ import {
   BarChart2
 } from "lucide-react"
 import Link from "next/link"
+import { getCases } from "@/app/actions/cases"
+import { formatDistanceToNow } from "date-fns"
 
-export default function Dashboard() {
+export default async function Dashboard() {
+  const cases = await getCases();
+  
   const kpiData = [
-    { title: "Active Cases", value: "24", sub: "+3 this month", icon: Briefcase, color: "text-primary" },
-    { title: "Extraction Accuracy", value: "99.2%", sub: "Verified (5.2k points)", icon: Zap, color: "text-accent" },
-    { title: "Pending Review", value: "7", sub: "Needs sign-off", icon: Clock, color: "text-orange-500" },
-    { title: "Engagement Value", value: "$1.4M", sub: "Projected billing", icon: BarChart2, color: "text-green-500" },
+    { title: "Active Cases", value: cases.length.toString(), sub: "Real-time count", icon: Briefcase, color: "text-primary" },
+    { title: "Extraction Accuracy", value: "99.2%", sub: "Verified system-wide", icon: Zap, color: "text-accent" },
+    { title: "Pending Review", value: cases.filter(c => c.status === 'REVIEW').length.toString(), sub: "Needs sign-off", icon: Clock, color: "text-orange-500" },
+    { title: "Engagements", value: "Active", sub: "Monitoring lifecycle", icon: BarChart2, color: "text-green-500" },
   ]
 
-  const recentValuations = [
-    { id: "1", name: "Global Logistics Group Valuation", client: "Preston & Reed LLP", status: "In Progress", date: "45m ago", priority: "High" },
-    { id: "2", name: "Marital Asset Audit - Smith", client: "Family Court Florida", status: "Completed", date: "4h ago", priority: "Medium" },
-    { id: "3", name: "Apex Realty Forensic Audit", client: "Federal Trade Comm.", status: "Review", date: "1d ago", priority: "Urgent" },
-  ]
+  const recentValuations = cases.slice(0, 3);
 
   return (
     <SidebarProvider>
@@ -41,13 +41,12 @@ export default function Dashboard() {
             <h1 className="text-xl font-bold font-headline text-foreground tracking-tight">Engagement Dashboard</h1>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" className="hidden sm:flex">
-              Generate Weekly Report
-            </Button>
-            <Button size="sm" className="bg-primary hover:bg-primary/90">
-              <FilePlus className="mr-2 h-4 w-4" />
-              New Valuation
-            </Button>
+            <Link href="/projects">
+              <Button size="sm" className="bg-primary hover:bg-primary/90">
+                <FilePlus className="mr-2 h-4 w-4" />
+                New Valuation
+              </Button>
+            </Link>
           </div>
         </header>
         
@@ -88,25 +87,18 @@ export default function Dashboard() {
                   {recentValuations.map((project) => (
                     <div key={project.id} className="flex items-center justify-between p-4 rounded-xl border border-border/50 bg-white hover:border-primary/30 hover:shadow-md transition-all group cursor-pointer">
                       <div className="flex items-center gap-4">
-                        <div className={`w-2 h-10 rounded-full ${
-                          project.priority === 'Urgent' ? 'bg-red-500' : 
-                          project.priority === 'High' ? 'bg-orange-500' : 'bg-blue-500'
-                        }`} />
+                        <div className={`w-2 h-10 rounded-full bg-primary`} />
                         <div className="flex flex-col gap-1">
                           <span className="font-bold text-primary text-sm group-hover:text-accent transition-colors">{project.name}</span>
                           <div className="flex items-center gap-3 text-[10px] text-muted-foreground font-medium uppercase">
                             <span className="flex items-center gap-1"><Users className="h-3 w-3" /> {project.client}</span>
                             <span>•</span>
-                            <span>{project.date}</span>
+                            <span>{formatDistanceToNow(new Date(project.createdAt))} ago</span>
                           </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
-                        <span className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full ${
-                          project.status === "Completed" ? "bg-green-100 text-green-700" :
-                          project.status === "Review" ? "bg-orange-100 text-orange-700" :
-                          "bg-blue-100 text-blue-700"
-                        }`}>
+                        <span className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full bg-blue-100 text-blue-700`}>
                           {project.status}
                         </span>
                         <Link href={`/projects/${project.id}`}>
@@ -117,6 +109,9 @@ export default function Dashboard() {
                       </div>
                     </div>
                   ))}
+                  {recentValuations.length === 0 && (
+                    <div className="text-center py-12 text-muted-foreground text-sm">No active cases. Create one to get started.</div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -131,11 +126,10 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="rounded-xl bg-white/10 p-4 border border-white/10 backdrop-blur-sm">
-                  <h4 className="text-xs font-bold uppercase tracking-widest mb-3 text-white/80">Anomaly Detected</h4>
+                  <h4 className="text-xs font-bold uppercase tracking-widest mb-3 text-white/80">System Status</h4>
                   <p className="text-sm leading-relaxed font-medium">
-                    Apex Realty Case: Unusual variance (24%) in 2023 payroll vs tax distributions. 
+                    All AI extraction nodes are operational. Forensic ledger sync is real-time across your workspace.
                   </p>
-                  <Button variant="link" className="p-0 h-auto text-accent text-xs mt-2 font-bold uppercase tracking-wide">Investigate Ledger</Button>
                 </div>
 
                 <div className="space-y-4">

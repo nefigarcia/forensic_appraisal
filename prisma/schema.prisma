@@ -1,3 +1,4 @@
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,129 +8,103 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum CaseStatus {
-  DRAFT
-  ANALYSIS
-  REVIEW
-  COMPLETED
+model User {
+  id             String       @id @default(cuid())
+  email          String       @unique
+  password       String
+  name           String?
+  role           String       @default("VIEWER")
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  AuditLog       AuditLog[]
 }
 
 model Organization {
   id        String   @id @default(cuid())
   name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  plan      String   @default("SOLO")
   users     User[]
   cases     Case[]
-}
-
-model User {
-  id             String       @id @default(cuid())
-  email          String       @unique
-  name           String?
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  organizationId String
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Case {
-  id             String         @id @default(cuid())
-  title          String
-  clientName     String
-  industry       String?
-  status         CaseStatus     @default(DRAFT)
-  organization   Organization   @relation(fields: [organizationId], references: [id])
+  id             String                 @id @default(cuid())
+  name           String
+  client         String
+  status         String                 @default("ACTIVE")
+  type           String
+  manager        String
   organizationId String
+  organization   Organization           @relation(fields: [organizationId], references: [id])
   documents      Document[]
-  statements     FinancialStatement[]
-  industryCodes  IndustryCode[]
+  financialData  FinancialValue[]
+  industry       IndustryClassification?
   valuationModels ValuationModel[]
-  chatSessions   ChatSession[]
-  reports        Report[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  AuditLog       AuditLog[]
 }
 
 model Document {
   id        String   @id @default(cuid())
-  fileName  String
-  fileUrl   String
-  fileType  String
-  status    String   @default("PENDING") // PENDING, PROCESSED, ERROR
+  name      String
+  size      String
+  type      String
+  status    String   @default("UPLOADED")
+  url       String?
+  caseId    String
   case      Case     @relation(fields: [caseId], references: [id])
-  caseId    String
   createdAt DateTime @default(now())
-}
-
-model FinancialStatement {
-  id        String              @id @default(cuid())
-  type      String              // INCOME_STATEMENT, BALANCE_SHEET, TAX_RETURN
-  year      String
-  case      Case                @relation(fields: [caseId], references: [id])
-  caseId    String
-  lineItems FinancialLineItem[]
-}
-
-model FinancialLineItem {
-  id          String           @id @default(cuid())
-  statement   FinancialStatement @relation(fields: [statementId], references: [id])
-  statementId String
-  name        String
-  category    String           // REVENUE, COGS, ASSET, LIABILITY
-  values      FinancialValue[]
+  updatedAt DateTime @updatedAt
 }
 
 model FinancialValue {
-  id         String            @id @default(cuid())
-  lineItem   FinancialLineItem @relation(fields: [lineItemId], references: [id])
-  lineItemId String
-  value      Float?
-  year       String
-  currency   String            @default("USD")
+  id            String   @id @default(cuid())
+  year          String
+  statementType String
+  lineItem      String
+  value         Float?
+  currency      String   @default("USD")
+  caseId        String
+  case          Case     @relation(fields: [caseId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
-model IndustryCode {
-  id          String @id @default(cuid())
-  type        String // NAICS, SIC
-  code        String
-  description String?
-  case        Case   @relation(fields: [caseId], references: [id])
-  caseId      String
+model IndustryClassification {
+  id                String @id @default(cuid())
+  suggestedIndustry String
+  naicsCode         String?
+  sicCode           String?
+  caseId            String @unique
+  case              Case   @relation(fields: [caseId], references: [id])
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 model ValuationModel {
-  id              String @id @default(cuid())
-  ebitda          Float
-  multiplier      Float
-  growthRate      Float
-  calculatedValue Float
-  case            Case   @relation(fields: [caseId], references: [id])
-  caseId          String
-  createdAt       DateTime @default(now())
+  id         String   @id @default(cuid())
+  name       String
+  ebitda     Float
+  multiplier Float
+  growthRate Float
+  value      Float
+  caseId     String
+  case       Case     @relation(fields: [caseId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
-model ChatSession {
-  id        String        @id @default(cuid())
-  case      Case          @relation(fields: [caseId], references: [id])
-  caseId    String
-  messages  ChatMessage[]
-  createdAt DateTime      @default(now())
-}
-
-model ChatMessage {
-  id        String      @id @default(cuid())
-  session   ChatSession @relation(fields: [sessionId], references: [id])
-  sessionId String
-  role      String      // USER, ASSISTANT
-  content   String      @db.Text
-  createdAt DateTime    @default(now())
-}
-
-model Report {
-  id          String   @id @default(cuid())
-  case        Case     @relation(fields: [caseId], references: [id])
-  caseId      String
-  fileUrl     String
-  generatedAt DateTime @default(now())
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  caseId    String?
+  case      Case?    @relation(fields: [caseId], references: [id])
+  createdAt DateTime @default(now())
 }
