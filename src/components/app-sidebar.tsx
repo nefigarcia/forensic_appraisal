@@ -8,9 +8,7 @@ import {
   Users,
   Database,
   Briefcase,
-  FileText,
   LogOut,
-  BarChart3,
   ShieldCheck
 } from "lucide-react"
 
@@ -30,7 +28,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 
 const mainItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
+  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Valuations", url: "/projects", icon: Briefcase },
   { title: "Discovery Search", url: "/search", icon: Search },
 ]
@@ -109,10 +107,12 @@ export function AppSidebar() {
       <SidebarFooter className="border-t border-sidebar-border/50 p-4">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton className="w-full justify-start gap-2 text-white/70 hover:text-white hover:bg-sidebar-accent transition-colors">
-              <LogOut className="size-4" />
-              <span className="group-data-[collapsible=icon]:hidden font-medium">Sign Out</span>
-            </SidebarMenuButton>
+            <form action="/api/auth/logout" method="POST">
+              <SidebarMenuButton className="w-full justify-start gap-2 text-white/70 hover:text-white hover:bg-sidebar-accent transition-colors">
+                <LogOut className="size-4" />
+                <span className="group-data-[collapsible=icon]:hidden font-medium">Sign Out</span>
+              </SidebarMenuButton>
+            </form>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
