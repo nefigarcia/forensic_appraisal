@@ -14,20 +14,48 @@ import {
   Calculator, 
   BarChart2, 
   TrendingUp, 
-  ShieldCheck, 
   Zap, 
-  ArrowRight,
   Download,
-  Info
+  Info,
+  Save,
+  Loader2
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
+import { getCaseDetails, saveValuation } from "@/app/actions/cases"
+import { toast } from "@/hooks/use-toast"
 
 export default function ValuationEngine() {
   const { id } = useParams()
   const [ebitda, setEbitda] = React.useState(1250000)
   const [multiplier, setMultiplier] = React.useState(6.5)
   const [growthRate, setGrowthRate] = React.useState(5)
+  const [isSaving, setIsSaving] = React.useState(false)
+
+  React.useEffect(() => {
+    async function load() {
+      const data = await getCaseDetails(id as string)
+      if (data?.valuationModels?.[0]) {
+        const last = data.valuationModels[0]
+        setEbitda(last.ebitda)
+        setMultiplier(last.multiplier)
+        setGrowthRate(last.growthRate)
+      }
+    }
+    load()
+  }, [id])
+
+  const handleSave = async () => {
+    setIsSaving(true)
+    try {
+      await saveValuation(id as string, { ebitda, multiplier, growthRate })
+      toast({ title: "Valuation Saved", description: "Model parameters persisted to database." })
+    } catch (e) {
+      toast({ title: "Error", description: "Could not save valuation.", variant: "destructive" })
+    } finally {
+      setIsSaving(false)
+    }
+  }
   
   const valuationResult = ebitda * multiplier
   const projectedValuation = valuationResult * (1 + growthRate / 100)
@@ -44,15 +72,20 @@ export default function ValuationEngine() {
             </Link>
             <h1 className="text-xl font-bold font-headline text-primary tracking-tight">Valuation Engine</h1>
           </div>
-          <Button className="bg-primary shadow-lg font-bold uppercase text-xs tracking-widest h-10">
-            <Download className="mr-2 h-4 w-4" />
-            Export Calc Sheet
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handleSave} disabled={isSaving} className="font-bold uppercase text-xs h-10">
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+              Save Model
+            </Button>
+            <Button className="bg-primary shadow-lg font-bold uppercase text-xs tracking-widest h-10">
+              <Download className="mr-2 h-4 w-4" />
+              Export Calc Sheet
+            </Button>
+          </div>
         </header>
 
         <main className="flex-1 p-8 max-w-7xl mx-auto w-full">
           <div className="grid gap-8 lg:grid-cols-12">
-            {/* Calculator Controls */}
             <div className="lg:col-span-5 space-y-6">
               <Card className="border-none shadow-sm bg-white">
                 <CardHeader>
@@ -88,11 +121,6 @@ export default function ValuationEngine() {
                       step={0.1} 
                       onValueChange={(val) => setMultiplier(val[0])} 
                     />
-                    <div className="flex justify-between text-[10px] font-bold text-muted-foreground uppercase">
-                      <span>1x</span>
-                      <span>10x (Avg)</span>
-                      <span>20x</span>
-                    </div>
                   </div>
 
                   <div className="space-y-6">
@@ -118,13 +146,12 @@ export default function ValuationEngine() {
                 <div>
                   <h4 className="text-xs font-bold uppercase tracking-widest text-primary mb-1">Model Precision</h4>
                   <p className="text-xs text-muted-foreground leading-relaxed font-medium">
-                    This calculation uses a standard market-multiple approach. For court-admissible reports, ensure the multiplier is benchmarked against connected BVR/DealStats data.
+                    Persisting this model ensures consistency across forensic reports.
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Results Display */}
             <div className="lg:col-span-7 space-y-6">
               <Card className="bg-primary text-white border-none shadow-2xl overflow-hidden relative min-h-[400px] flex flex-col justify-center text-center p-12">
                 <div className="absolute top-0 right-0 p-8 opacity-10">
@@ -135,17 +162,6 @@ export default function ValuationEngine() {
                     <h3 className="text-xs font-bold uppercase tracking-[0.3em] opacity-60 mb-4">Current Implied Equity Value</h3>
                     <div className="text-6xl lg:text-8xl font-black font-headline tracking-tighter">
                       ${(valuationResult / 1000000).toFixed(2)}M
-                    </div>
-                  </div>
-                  
-                  <div className="grid grid-cols-2 gap-8 pt-12 border-t border-white/10">
-                    <div className="text-left">
-                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-60 mb-1">Next Year Projection</p>
-                      <p className="text-2xl font-bold text-accent tracking-tight">${(projectedValuation / 1000000).toFixed(2)}M</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[10px] font-bold uppercase tracking-widest opacity-60 mb-1">Variance Alert</p>
-                      <p className="text-2xl font-bold tracking-tight text-white/90">Low (4.2%)</p>
                     </div>
                   </div>
                 </div>

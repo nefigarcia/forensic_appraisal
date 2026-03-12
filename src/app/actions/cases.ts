@@ -31,6 +31,7 @@ export async function createCase(formData: FormData) {
       type,
       manager,
       organizationId: session.organizationId,
+      status: "ACTIVE",
     },
   });
 
@@ -46,10 +47,48 @@ export async function getCaseDetails(id: string) {
   return await prisma.case.findUnique({
     where: { id },
     include: {
-      documents: true,
-      financialData: true,
+      documents: { orderBy: { createdAt: 'desc' } },
+      financialData: { orderBy: { year: 'desc' } },
       industry: true,
-      valuationModels: true,
+      valuationModels: { orderBy: { createdAt: 'desc' }, take: 1 },
     },
+  });
+}
+
+export async function saveValuation(caseId: string, data: { ebitda: number; multiplier: number; growthRate: number }) {
+  const session = await getSession();
+  if (!session) throw new Error("Unauthorized");
+
+  const model = await prisma.valuationModel.create({
+    data: {
+      caseId,
+      ebitda: data.ebitda,
+      multiplier: data.multiplier,
+      growthRate: data.growthRate,
+      valuationType: "MARKET_APPROACH",
+    },
+  });
+
+  revalidatePath(`/projects/${caseId}/valuation`);
+  return model;
+}
+
+export async function searchCases(query: string) {
+  const session = await getSession();
+  if (!session) return [];
+
+  return await prisma.case.findMany({
+    where: {
+      organizationId: session.organizationId,
+      OR: [
+        { name: { contains: query } },
+        { client: { contains: query } },
+        { type: { contains: query } },
+      ],
+    },
+    include: {
+      documents: true,
+    },
+    take: 10,
   });
 }

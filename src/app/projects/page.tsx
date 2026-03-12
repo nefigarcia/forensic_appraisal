@@ -1,3 +1,7 @@
+
+'use client';
+
+import * as React from "react"
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
 import { Card, CardContent } from "@/components/ui/card"
@@ -10,19 +14,69 @@ import {
   Briefcase,
   Filter,
   Download,
-  Calendar
+  Calendar,
+  Loader2
 } from "lucide-react"
 import Link from "next/link"
 import { Input } from "@/components/ui/input"
+import { getCases, createCase } from "@/app/actions/cases"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { toast } from "@/hooks/use-toast"
 
 export default function ProjectsPage() {
-  const projects = [
-    { id: "1", name: "Global Logistics Group Valuation", client: "Preston & Reed LLP", status: "In Progress", date: "Oct 24, 2024", type: "M&A Advisory" },
-    { id: "2", name: "Marital Asset Audit - Smith", client: "Family Court Florida", status: "Completed", date: "Oct 23, 2024", type: "Family Law" },
-    { id: "3", name: "Apex Realty Forensic Audit", client: "Federal Trade Comm.", status: "Review", date: "Oct 21, 2024", type: "Regulatory" },
-    { id: "4", name: "Quantum Tech IP Audit", client: "Dr. Aris Quantum", status: "Active", date: "Oct 19, 2024", type: "Litigation" },
-    { id: "5", name: "Sunshine Solar Estate", client: "Bank of America", status: "Active", date: "Oct 18, 2024", type: "Estate Tax" },
-  ]
+  const [projects, setProjects] = React.useState<any[]>([])
+  const [loading, setLoading] = React.useState(true)
+  const [searchQuery, setSearchQuery] = React.useState("")
+  const [isCreating, setIsCreating] = React.useState(false)
+  const [open, setOpen] = React.useState(false)
+
+  const loadProjects = React.useCallback(async () => {
+    setLoading(true)
+    const data = await getCases()
+    setProjects(data)
+    setLoading(false)
+  }, [])
+
+  React.useEffect(() => {
+    loadProjects()
+  }, [loadProjects])
+
+  const filteredProjects = projects.filter(p => 
+    p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    p.client.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
+  const handleCreateCase = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setIsCreating(true)
+    const formData = new FormData(e.currentTarget)
+    try {
+      await createCase(formData)
+      toast({ title: "Success", description: "Valuation case created." })
+      setOpen(false)
+      loadProjects()
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to create case.", variant: "destructive" })
+    } finally {
+      setIsCreating(false)
+    }
+  }
 
   return (
     <SidebarProvider>
@@ -38,10 +92,59 @@ export default function ProjectsPage() {
               <Download className="mr-2 h-4 w-4" />
               Export Catalog
             </Button>
-            <Button size="sm" className="bg-primary hover:bg-primary/90">
-              <FilePlus className="mr-2 h-4 w-4" />
-              New Valuation
-            </Button>
+            
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="bg-primary hover:bg-primary/90">
+                  <FilePlus className="mr-2 h-4 w-4" />
+                  New Valuation
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[425px]">
+                <form onSubmit={handleCreateCase}>
+                  <DialogHeader>
+                    <DialogTitle>New Forensic Matter</DialogTitle>
+                    <DialogDescription>
+                      Initialize a new valuation case in the workspace.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                    <div className="grid grid-cols-4 items-center gap-4">
+                      <Label htmlFor="name" className="text-right">Matter Name</Label>
+                      <Input id="name" name="name" className="col-span-3" required />
+                    </div>
+                    <div className="grid grid-cols-4 items-center gap-4">
+                      <Label htmlFor="client" className="text-right">Client</Label>
+                      <Input id="client" name="client" className="col-span-3" required />
+                    </div>
+                    <div className="grid grid-cols-4 items-center gap-4">
+                      <Label htmlFor="type" className="text-right">Type</Label>
+                      <Select name="type" defaultValue="Litigation">
+                        <SelectTrigger className="col-span-3">
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Litigation">Litigation</SelectItem>
+                          <SelectItem value="M&A Advisory">M&A Advisory</SelectItem>
+                          <SelectItem value="Estate Tax">Estate Tax</SelectItem>
+                          <SelectItem value="Family Law">Family Law</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-4 items-center gap-4">
+                      <Label htmlFor="manager" className="text-right">Manager</Label>
+                      <Input id="manager" name="manager" className="col-span-3" required />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button type="submit" disabled={isCreating}>
+                      {isCreating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Initialize Case
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
           </div>
         </header>
         
@@ -49,22 +152,19 @@ export default function ProjectsPage() {
           <div className="flex flex-col sm:flex-row items-center gap-4 mb-8">
             <div className="relative flex-1 w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input className="pl-10 h-10 w-full border-none shadow-sm bg-white" placeholder="Search cases by client, type, or matter name..." />
-            </div>
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <Button variant="outline" className="bg-white border-none shadow-sm flex-1 sm:flex-none">
-                <Filter className="mr-2 h-4 w-4" />
-                Filter
-              </Button>
-              <Button variant="outline" className="bg-white border-none shadow-sm flex-1 sm:flex-none">
-                <Calendar className="mr-2 h-4 w-4" />
-                Date Range
-              </Button>
+              <Input 
+                className="pl-10 h-10 w-full border-none shadow-sm bg-white" 
+                placeholder="Search cases by client or matter name..." 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
           </div>
 
           <div className="grid gap-4">
-            {projects.map((project) => (
+            {loading ? (
+              <div className="text-center py-20"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" /></div>
+            ) : filteredProjects.map((project) => (
               <Card key={project.id} className="border-none shadow-sm hover:ring-2 hover:ring-primary/20 transition-all group overflow-hidden bg-white">
                 <CardContent className="p-0">
                   <div className="flex flex-col md:flex-row md:items-center justify-between p-6">
@@ -80,17 +180,13 @@ export default function ProjectsPage() {
                         <div className="flex items-center gap-4 text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">
                           <span className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" /> {project.client}</span>
                           <span>•</span>
-                          <span>{project.date}</span>
+                          <span>{new Date(project.createdAt).toLocaleDateString()}</span>
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center justify-between md:justify-end gap-6 mt-4 md:mt-0 pt-4 md:pt-0 border-t md:border-t-0">
-                      <span className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full ${
-                        project.status === "Completed" ? "bg-green-100 text-green-700" :
-                        project.status === "Review" ? "bg-orange-100 text-orange-700" :
-                        "bg-blue-100 text-blue-700"
-                      }`}>
-                        {project.status}
+                      <span className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1 rounded-full bg-blue-100 text-blue-700`}>
+                        {project.status || 'ACTIVE'}
                       </span>
                       <Link href={`/projects/${project.id}`}>
                         <Button variant="ghost" className="font-bold uppercase text-[10px] tracking-widest group-hover:translate-x-1 transition-transform">
@@ -103,6 +199,9 @@ export default function ProjectsPage() {
                 </CardContent>
               </Card>
             ))}
+            {!loading && filteredProjects.length === 0 && (
+              <div className="text-center py-20 text-muted-foreground">No matters found.</div>
+            )}
           </div>
         </main>
       </SidebarInset>

@@ -15,19 +15,15 @@ import {
   ArrowLeft,
   Loader2,
   Globe,
-  ExternalLink,
-  History,
-  ShieldAlert,
   BarChart4,
   Zap,
-  Download,
-  MoreVertical,
   Calculator,
   Database
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { getCaseDetails } from "@/app/actions/cases"
+import { addDocument } from "@/app/actions/documents"
 import { runFinancialExtraction, runIndustryAnalysis } from "@/app/actions/ai-actions"
 import { toast } from "@/hooks/use-toast"
 import {
@@ -38,9 +34,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { format } from "date-fns"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
 
 export default function ProjectDetail() {
   const { id } = useParams()
@@ -48,28 +54,30 @@ export default function ProjectDetail() {
   const [isAnalyzingIndustry, setIsAnalyzingIndustry] = React.useState(false)
   const [caseData, setCaseData] = React.useState<any>(null)
   const [loading, setLoading] = React.useState(true)
+  const [isUploading, setIsUploading] = React.useState(false)
+  const [uploadOpen, setUploadOpen] = React.useState(false)
+
+  const loadData = React.useCallback(async () => {
+    try {
+      const data = await getCaseDetails(id as string);
+      setCaseData(data);
+    } catch (e) {
+      toast({ title: "Error", description: "Could not load case details", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [id])
 
   React.useEffect(() => {
-    async function loadData() {
-      try {
-        const data = await getCaseDetails(id as string);
-        setCaseData(data);
-      } catch (e) {
-        toast({ title: "Error", description: "Could not load case details", variant: "destructive" });
-      } finally {
-        setLoading(false);
-      }
-    }
     loadData();
-  }, [id]);
+  }, [loadData]);
 
   const handleExtraction = async () => {
     setIsExtracting(true)
     try {
       const mockDataUri = "data:application/pdf;base64,JVBERi0xLjQKJ..." 
       await runFinancialExtraction(id as string, mockDataUri);
-      const updated = await getCaseDetails(id as string);
-      setCaseData(updated);
+      await loadData()
       toast({
         title: "Forensic Extraction Successful",
         description: `Financial values have been persisted to the ledger.`,
@@ -89,8 +97,7 @@ export default function ProjectDetail() {
     setIsAnalyzingIndustry(true)
     try {
       await runIndustryAnalysis(id as string, "Forensic matter for: " + caseData?.name);
-      const updated = await getCaseDetails(id as string);
-      setCaseData(updated);
+      await loadData()
       toast({
         title: "Industry Profile Updated",
         description: `Classification saved to database.`,
@@ -105,6 +112,22 @@ export default function ProjectDetail() {
     }
   }
 
+  const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setIsUploading(true)
+    const formData = new FormData(e.currentTarget)
+    try {
+      await addDocument(id as string, formData)
+      toast({ title: "Document Added", description: "Source evidence persisted to custody binder." })
+      setUploadOpen(false)
+      loadData()
+    } catch (err) {
+      toast({ title: "Error", description: "Failed to add document.", variant: "destructive" })
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
   if (loading) return <div className="flex items-center justify-center min-h-screen"><Loader2 className="animate-spin text-primary h-8 w-8" /></div>;
   if (!caseData) return <div className="p-8 text-center">Case not found.</div>;
 
@@ -115,7 +138,7 @@ export default function ProjectDetail() {
         <header className="flex h-16 shrink-0 items-center justify-between px-6 border-b bg-white shadow-sm z-10">
           <div className="flex items-center gap-4">
             <SidebarTrigger />
-            <Link href="/dashboard" className="p-2 hover:bg-muted rounded-full transition-colors">
+            <Link href="/projects" className="p-2 hover:bg-muted rounded-full transition-colors">
               <ArrowLeft className="h-4 w-4 text-primary" />
             </Link>
             <div className="border-l pl-4">
@@ -134,10 +157,39 @@ export default function ProjectDetail() {
                 Open Modeler
               </Button>
             </Link>
-            <Button size="sm" className="bg-accent hover:bg-accent/90 shadow-lg text-xs font-bold uppercase h-10 px-6">
-              <Plus className="mr-2 h-4 w-4" />
-              Upload Source
-            </Button>
+            
+            <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="bg-accent hover:bg-accent/90 shadow-lg text-xs font-bold uppercase h-10 px-6">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Upload Source
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <form onSubmit={handleUpload}>
+                  <DialogHeader>
+                    <DialogTitle>Add Forensic Evidence</DialogTitle>
+                    <DialogDescription>Attach a document to the matter's custody binder.</DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 py-4">
+                    <div className="grid grid-cols-4 items-center gap-4">
+                      <Label htmlFor="name" className="text-right">File Name</Label>
+                      <Input id="name" name="name" placeholder="Tax_Return_2023.pdf" className="col-span-3" required />
+                    </div>
+                    <div className="grid grid-cols-4 items-center gap-4">
+                      <Label htmlFor="type" className="text-right">Type</Label>
+                      <Input id="type" name="type" placeholder="Tax Return" className="col-span-3" required />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button type="submit" disabled={isUploading}>
+                      {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Save to Binder
+                    </Button>
+                  </DialogFooter>
+                </form>
+              </DialogContent>
+            </Dialog>
           </div>
         </header>
 
@@ -178,11 +230,11 @@ export default function ProjectDetail() {
                               </div>
                               <div>
                                 <p className="text-sm font-bold text-primary group-hover:text-accent transition-colors">{doc.name}</p>
-                                <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">{doc.size} • Received {format(new Date(doc.createdAt), 'MMM d')}</p>
+                                <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">{doc.size} • Received {format(new Date(doc.createdAt), 'MMM d, yyyy')}</p>
                               </div>
                             </div>
                             <div className="flex items-center gap-4">
-                              <Badge variant='default' className="text-[10px] uppercase font-bold tracking-widest">
+                              <Badge variant='outline' className="text-[10px] uppercase font-bold tracking-widest">
                                 {doc.status}
                               </Badge>
                             </div>
@@ -210,7 +262,7 @@ export default function ProjectDetail() {
                       </p>
                       <Button 
                         onClick={handleExtraction} 
-                        disabled={isExtracting}
+                        disabled={isExtracting || caseData.documents.length === 0}
                         className="w-full bg-accent hover:bg-accent/90 border-none font-bold uppercase text-[10px] tracking-widest h-11 shadow-lg"
                       >
                         {isExtracting ? "Processing..." : "Run Extraction"}

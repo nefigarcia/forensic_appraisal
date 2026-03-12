@@ -1,11 +1,31 @@
+
+'use client';
+
+import * as React from "react"
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Search as SearchIcon, Sparkles, Filter, FileText, ArrowRight } from "lucide-react"
+import { Search as SearchIcon, Sparkles, FileText, ArrowRight, Loader2 } from "lucide-react"
+import { searchCases } from "@/app/actions/cases"
+import { Badge } from "@/components/ui/badge"
+import Link from "next/link"
 
 export default function SearchPage() {
+  const [query, setQuery] = React.useState("")
+  const [results, setResults] = React.useState<any[]>([])
+  const [isSearching, setIsSearching] = React.useState(false)
+
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!query) return
+    setIsSearching(true)
+    const data = await searchCases(query)
+    setResults(data)
+    setIsSearching(false)
+  }
+
   return (
     <SidebarProvider>
       <AppSidebar />
@@ -24,64 +44,49 @@ export default function SearchPage() {
               AI-Powered Forensic Discovery
             </div>
             <h2 className="text-4xl font-bold text-primary tracking-tighter">Deep Archive Intelligence</h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto font-medium">Search across all Matter binders using natural legal and accounting language.</p>
           </div>
 
-          <div className="relative mb-12">
+          <form onSubmit={handleSearch} className="relative mb-12">
             <div className="absolute left-6 top-1/2 -translate-y-1/2 h-6 w-6 text-primary/40">
               <SearchIcon />
             </div>
             <Input 
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
               className="pl-16 h-18 text-xl rounded-2xl shadow-xl border-none bg-white focus:ring-2 focus:ring-accent transition-all py-8" 
-              placeholder="e.g., 'Find all S-Corp distributions over $50k in the Smith case'" 
+              placeholder="e.g., 'Smith Valuation'" 
             />
-            <Button className="absolute right-3 top-3 h-12 bg-primary hover:bg-primary/90 rounded-xl px-8 font-bold uppercase text-xs tracking-widest">
-              <Sparkles className="mr-2 h-4 w-4 fill-accent text-accent" />
+            <Button type="submit" className="absolute right-3 top-3 h-12 bg-primary hover:bg-primary/90 rounded-xl px-8 font-bold uppercase text-xs tracking-widest" disabled={isSearching}>
+              {isSearching ? <Loader2 className="animate-spin h-4 w-4" /> : <Sparkles className="mr-2 h-4 w-4 fill-accent text-accent" />}
               Execute Discovery
             </Button>
-          </div>
+          </form>
 
-          <div className="grid gap-6 md:grid-cols-2">
-            <Card className="border-none shadow-sm bg-white">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Recent Deep Scans</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1">
-                {[
-                  "2023 Revenue trends in Florida region",
-                  "Operating agreement buyout clauses",
-                  "Johnson case tax variances > 10%",
-                  "Cold-chain transport multipliers"
-                ].map(q => (
-                  <Button key={q} variant="ghost" className="w-full justify-start text-[11px] font-bold text-primary h-10 hover:bg-accent/5">
-                    <SearchIcon className="mr-3 h-3.5 w-3.5 opacity-40" />
-                    {q}
-                    <ArrowRight className="ml-auto h-3.5 w-3.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </Button>
-                ))}
-              </CardContent>
-            </Card>
-            
-            <Card className="border-none shadow-sm bg-muted/30">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Filter Intelligence</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 pt-2">
-                <div className="flex flex-wrap gap-2">
-                  {["Date: Last 12m", "Type: Tax Return", "Client: Preston", "Confidence: >90%"].map(tag => (
-                    <Badge key={tag} variant="secondary" className="bg-white border-none shadow-sm px-3 py-1 font-bold text-[10px] uppercase tracking-wide">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-                <div className="p-4 bg-white/50 rounded-xl border border-border/50">
-                  <h4 className="text-[10px] font-bold uppercase tracking-widest text-primary mb-2">Discovery Tip</h4>
-                  <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">
-                    Try searching for specific ledger patterns, like "unusual cash withdrawals between Dec 20-30 across all retail cases".
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+          <div className="space-y-6">
+            {results.map((item) => (
+              <Card key={item.id} className="border-none shadow-sm hover:shadow-md transition-shadow">
+                <CardHeader className="flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg font-bold">{item.name}</CardTitle>
+                    <CardDescription>{item.client} • {item.type}</CardDescription>
+                  </div>
+                  <Link href={`/projects/${item.id}`}>
+                    <Button variant="ghost" size="sm">
+                      Open Matter <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  </Link>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1"><FileText className="h-3 w-3" /> {item.documents.length} Source Documents</span>
+                    <Badge variant="outline">{item.status}</Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+            {results.length === 0 && !isSearching && query && (
+              <div className="text-center py-12 text-muted-foreground">No matches found in the discovery archive.</div>
+            )}
           </div>
         </main>
       </SidebarInset>
