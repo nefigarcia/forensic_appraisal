@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -10,20 +11,19 @@ import {
   FileText, 
   Table as TableIcon, 
   Search, 
-  Upload, 
-  Download, 
-  MoreVertical,
   Plus,
   ArrowLeft,
   Loader2,
-  CheckCircle2,
   Globe,
   ExternalLink,
-  Database,
   History,
   ShieldAlert,
   BarChart4,
-  Zap
+  Zap,
+  Download,
+  MoreVertical,
+  Calculator,
+  Database
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
@@ -112,7 +112,7 @@ export default function ProjectDetail() {
         <header className="flex h-16 shrink-0 items-center justify-between px-6 border-b bg-white shadow-sm z-10">
           <div className="flex items-center gap-4">
             <SidebarTrigger />
-            <Link href="/projects" className="p-2 hover:bg-muted rounded-full transition-colors">
+            <Link href="/dashboard" className="p-2 hover:bg-muted rounded-full transition-colors">
               <ArrowLeft className="h-4 w-4 text-primary" />
             </Link>
             <div className="border-l pl-4">
@@ -125,12 +125,14 @@ export default function ProjectDetail() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" className="bg-white border-none shadow-sm text-xs font-bold uppercase">
-              <Download className="mr-2 h-3.5 w-3.5" />
-              Report Binder
-            </Button>
-            <Button size="sm" className="bg-accent hover:bg-accent/90 shadow-sm text-xs font-bold uppercase">
-              <Plus className="mr-2 h-3.5 w-3.5" />
+            <Link href={`/projects/${id}/valuation`}>
+              <Button variant="outline" size="sm" className="bg-white border-primary/20 text-primary shadow-sm text-xs font-bold uppercase h-10 px-6">
+                <Calculator className="mr-2 h-4 w-4" />
+                Open Modeler
+              </Button>
+            </Link>
+            <Button size="sm" className="bg-accent hover:bg-accent/90 shadow-lg text-xs font-bold uppercase h-10 px-6">
+              <Plus className="mr-2 h-4 w-4" />
               Upload Source
             </Button>
           </div>
@@ -139,28 +141,28 @@ export default function ProjectDetail() {
         <main className="flex-1 p-8 bg-background/30 max-w-7xl mx-auto w-full">
           <Tabs defaultValue="documents" className="space-y-6">
             <TabsList className="bg-white/80 border w-full justify-start p-1 h-12 shadow-sm rounded-xl">
-              <TabsTrigger value="documents" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg">
+              <TabsTrigger value="documents" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <FileText className="mr-2 h-4 w-4" />
                 Custody Binder
               </TabsTrigger>
-              <TabsTrigger value="analysis" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg">
+              <TabsTrigger value="analysis" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <TableIcon className="mr-2 h-4 w-4" />
-                Analysis Ledger
+                Forensic Ledger
               </TabsTrigger>
-              <TabsTrigger value="industry" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg">
+              <TabsTrigger value="industry" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <Globe className="mr-2 h-4 w-4" />
-                Market Benchmarks
+                Benchmarks
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="documents">
               <div className="grid gap-6 lg:grid-cols-4">
                 <div className="lg:col-span-3 space-y-6">
-                  <Card className="border-none shadow-sm overflow-hidden">
-                    <CardHeader className="flex flex-row items-center justify-between border-b bg-white py-4">
+                  <Card className="border-none shadow-sm overflow-hidden bg-white">
+                    <CardHeader className="flex flex-row items-center justify-between border-b py-4">
                       <div>
                         <CardTitle className="text-lg font-bold font-headline">Source Evidence</CardTitle>
-                        <CardDescription className="text-xs">Verified documents for valuation model</CardDescription>
+                        <CardDescription className="text-xs">Secure document custody for matter audit</CardDescription>
                       </div>
                       <div className="relative">
                         <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
@@ -206,47 +208,47 @@ export default function ProjectDetail() {
                 </div>
                 
                 <div className="space-y-6">
-                  <Card className="bg-primary text-white border-none shadow-lg overflow-hidden relative">
+                  <Card className="bg-primary text-white border-none shadow-xl overflow-hidden relative">
                     <div className="absolute top-0 right-0 p-4 opacity-10">
-                      <Zap className="h-20 w-20 fill-white" />
+                      <Zap className="h-24 w-24 fill-white" />
                     </div>
                     <CardHeader>
                       <CardTitle className="text-sm font-bold uppercase tracking-widest flex items-center gap-2">
                         {isExtracting ? <Loader2 className="h-4 w-4 animate-spin text-accent" /> : <Zap className="h-4 w-4 fill-accent text-accent" />}
                         AI Processing
                       </CardTitle>
-                      <CardDescription className="text-white/60 font-medium">Extract data from latest uploads</CardDescription>
+                      <CardDescription className="text-white/60 font-medium">Standardize P&L and Balance Sheet</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <p className="text-xs leading-relaxed opacity-80 font-medium">
-                        Our engine standardizes P&L and Balance Sheet line items into our Forensic Ledger automatically.
+                        Our forensic engine maps messy account names into structured valuation line items automatically.
                       </p>
                       <Button 
                         onClick={handleExtraction} 
                         disabled={isExtracting}
-                        className="w-full bg-accent hover:bg-accent/90 border-none font-bold uppercase text-[10px] tracking-widest h-10 shadow-md"
+                        className="w-full bg-accent hover:bg-accent/90 border-none font-bold uppercase text-[10px] tracking-widest h-11 shadow-lg"
                       >
-                        {isExtracting ? "Indexing..." : "Run AI Extraction"}
+                        {isExtracting ? "Indexing Binder..." : "Execute AI Extraction"}
                       </Button>
                     </CardContent>
                   </Card>
                   
-                  <Card className="border-none shadow-sm">
-                    <CardHeader className="pb-3">
+                  <Card className="border-none shadow-sm bg-white">
+                    <CardHeader className="pb-3 border-b">
                       <CardTitle className="text-xs font-bold uppercase tracking-widest text-primary flex items-center gap-2">
                         <History className="h-3.5 w-3.5" />
                         Custody Chain
                       </CardTitle>
                     </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div className="space-y-3">
+                    <CardContent className="pt-4 space-y-4">
+                      <div className="space-y-4">
                         {[
                           { action: "Document Upload", time: "2h ago", user: "S. Jenkins" },
                           { action: "AI Extraction", time: "1h ago", user: "ValuVault AI" },
-                          { action: "Review Started", time: "15m ago", user: "S. Jenkins" },
+                          { action: "Model Updated", time: "15m ago", user: "Sarah Jenkins" },
                         ].map((log, i) => (
                           <div key={i} className="flex gap-3 relative">
-                            <div className="w-1.5 h-1.5 rounded-full bg-primary/20 mt-1.5 shrink-0" />
+                            <div className="w-2 h-2 rounded-full bg-primary/30 mt-1 shrink-0" />
                             <div>
                               <p className="text-[11px] font-bold text-primary">{log.action}</p>
                               <p className="text-[9px] text-muted-foreground uppercase font-medium">{log.time} • {log.user}</p>
@@ -254,7 +256,7 @@ export default function ProjectDetail() {
                           </div>
                         ))}
                       </div>
-                      <Button variant="ghost" className="w-full text-[10px] uppercase font-bold tracking-widest h-8 text-primary">Full Audit Log</Button>
+                      <Button variant="ghost" className="w-full text-[10px] uppercase font-bold tracking-widest h-8 text-primary hover:bg-muted">Full Audit Log</Button>
                     </CardContent>
                   </Card>
                 </div>
@@ -262,20 +264,20 @@ export default function ProjectDetail() {
             </TabsContent>
 
             <TabsContent value="analysis">
-              <Card className="border-none shadow-sm overflow-hidden">
-                <CardHeader className="flex flex-row items-center justify-between border-b bg-white py-6">
+              <Card className="border-none shadow-sm overflow-hidden bg-white">
+                <CardHeader className="flex flex-row items-center justify-between border-b py-6">
                   <div>
-                    <CardTitle className="text-lg font-bold font-headline">Valuation Ledger</CardTitle>
-                    <CardDescription className="text-xs">Structured year-over-year financial comparisons</CardDescription>
+                    <CardTitle className="text-lg font-bold font-headline">Forensic Ledger</CardTitle>
+                    <CardDescription className="text-xs">Structured normalization for valuation modeling</CardDescription>
                   </div>
                   <div className="flex gap-3">
-                    <Button variant="outline" size="sm" className="bg-white text-xs font-bold uppercase tracking-wide h-9">
-                      <Download className="mr-2 h-4 w-4" />
+                    <Button variant="outline" size="sm" className="bg-white text-xs font-bold uppercase tracking-wide h-9 border-muted">
+                      <Download className="mr-2 h-4 w-4 text-primary" />
                       Excel Sync
                     </Button>
-                    <Button variant="outline" size="sm" className="bg-white text-xs font-bold uppercase tracking-wide h-9">
+                    <Button variant="outline" size="sm" className="bg-white text-xs font-bold uppercase tracking-wide h-9 border-muted">
                       <ShieldAlert className="mr-2 h-4 w-4 text-orange-500" />
-                      Run Variance Check
+                      Run Variance
                     </Button>
                   </div>
                 </CardHeader>
@@ -283,13 +285,13 @@ export default function ProjectDetail() {
                   {extractedData ? (
                     <div className="overflow-x-auto">
                       <Table>
-                        <TableHeader className="bg-muted/50 border-b">
+                        <TableHeader className="bg-muted/30">
                           <TableRow>
-                            <TableHead className="w-[100px] text-[10px] uppercase font-bold text-primary tracking-widest">Year</TableHead>
+                            <TableHead className="text-[10px] uppercase font-bold text-primary tracking-widest">Year</TableHead>
                             <TableHead className="text-[10px] uppercase font-bold text-primary tracking-widest">Statement</TableHead>
                             <TableHead className="text-[10px] uppercase font-bold text-primary tracking-widest">Line Item</TableHead>
-                            <TableHead className="text-right text-[10px] uppercase font-bold text-primary tracking-widest">Value</TableHead>
-                            <TableHead className="w-[80px] text-center text-[10px] uppercase font-bold text-primary tracking-widest">Source</TableHead>
+                            <TableHead className="text-right text-[10px] uppercase font-bold text-primary tracking-widest">Normalized Value</TableHead>
+                            <TableHead className="w-[80px] text-center text-[10px] uppercase font-bold text-primary tracking-widest">Ref</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -301,8 +303,8 @@ export default function ProjectDetail() {
                                   {item.statementType}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="font-medium">{item.lineItem}</TableCell>
-                              <TableCell className="text-right font-mono font-bold text-primary">
+                              <TableCell className="font-medium text-sm">{item.lineItem}</TableCell>
+                              <TableCell className="text-right font-mono font-bold text-primary text-sm">
                                 {item.value !== null ? item.value.toLocaleString(undefined, {
                                   style: 'currency',
                                   currency: item.currency || 'USD'
@@ -320,14 +322,14 @@ export default function ProjectDetail() {
                     </div>
                   ) : (
                     <div className="flex flex-col items-center justify-center py-20 text-center">
-                      <div className="bg-primary/5 p-6 rounded-full mb-6">
-                        <BarChart4 className="h-12 w-12 text-primary/40" />
+                      <div className="bg-primary/5 p-8 rounded-full mb-6">
+                        <BarChart4 className="h-16 w-16 text-primary/40" />
                       </div>
-                      <h3 className="font-bold text-xl text-primary tracking-tight">Ledger Empty</h3>
+                      <h3 className="font-bold text-xl text-primary tracking-tight">Ledger Is Empty</h3>
                       <p className="text-sm text-muted-foreground mb-8 max-w-sm font-medium">
-                        Initiate AI extraction from source documents to populate the forensic comparison table.
+                        Execute AI extraction on the matter binder to populate normalized comparisons.
                       </p>
-                      <Button onClick={handleExtraction} disabled={isExtracting} className="bg-primary font-bold uppercase tracking-widest text-xs px-8 h-12 shadow-lg">
+                      <Button onClick={handleExtraction} disabled={isExtracting} className="bg-primary font-bold uppercase tracking-widest text-xs px-10 h-14 shadow-xl">
                         {isExtracting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4 fill-white" />}
                         Generate Ledger
                       </Button>
@@ -339,39 +341,42 @@ export default function ProjectDetail() {
 
             <TabsContent value="industry">
               <div className="grid gap-6 lg:grid-cols-2">
-                <Card className="border-none shadow-sm overflow-hidden">
+                <Card className="border-none shadow-sm overflow-hidden bg-white">
                   <CardHeader className="bg-white border-b py-6">
-                    <CardTitle className="text-lg font-bold font-headline">NAICS/SIC Profiling</CardTitle>
-                    <CardDescription className="text-xs">AI-suggested classifications for benchmarking</CardDescription>
+                    <CardTitle className="text-lg font-bold font-headline">Classification Profiling</CardTitle>
+                    <CardDescription className="text-xs">NAICS/SIC mapping for peer benchmarking</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-8 p-8">
                     {!industryData ? (
                       <div className="py-12 text-center space-y-6">
                         <p className="text-sm text-muted-foreground font-medium">
-                          Analyze the business engagement profile to find the most accurate industry benchmark codes.
+                          Analyze the engagement profile to identify the primary benchmark industry codes.
                         </p>
-                        <Button onClick={handleIndustryAnalysis} disabled={isAnalyzingIndustry} className="bg-accent font-bold uppercase tracking-widest text-xs px-8 h-11">
-                          {isAnalyzingIndustry ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
-                          Identify Industry
+                        <Button onClick={handleIndustryAnalysis} disabled={isAnalyzingIndustry} className="bg-accent font-bold uppercase tracking-widest text-xs px-10 h-12 shadow-md">
+                          {isAnalyzingIndustry ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Globe className="mr-2 h-4 w-4" />}
+                          Suggest Codes
                         </Button>
                       </div>
                     ) : (
                       <>
-                        <div className="p-6 bg-primary/5 rounded-xl border border-primary/10">
+                        <div className="p-8 bg-primary/5 rounded-2xl border border-primary/10">
                           <label className="text-[10px] font-bold uppercase text-primary tracking-widest block mb-2">Primary Classification</label>
-                          <p className="text-xl font-bold text-primary tracking-tight">{industryData.suggestedIndustry}</p>
+                          <p className="text-2xl font-black text-primary tracking-tight leading-tight">{industryData.suggestedIndustry}</p>
                         </div>
                         
                         <div className="space-y-4">
                           <label className="text-[10px] font-bold uppercase text-primary tracking-widest block">Reference Codes</label>
-                          <div className="grid gap-3">
+                          <div className="grid gap-4">
                             {industryData.industryCodes.map((code, idx) => (
-                              <div key={idx} className="flex items-center justify-between p-4 border rounded-xl bg-white shadow-sm hover:ring-2 hover:ring-accent/20 transition-all group">
-                                <div className="flex items-center gap-3">
-                                  <Badge variant="secondary" className="font-bold text-[10px]">{code.type}</Badge>
-                                  <span className="font-mono font-bold text-primary tracking-tighter text-lg">{code.code}</span>
+                              <div key={idx} className="flex items-center justify-between p-5 border rounded-2xl bg-white shadow-sm hover:ring-2 hover:ring-accent/20 transition-all group">
+                                <div className="flex items-center gap-4">
+                                  <Badge variant="secondary" className="font-bold text-[10px] px-3 py-1">{code.type}</Badge>
+                                  <span className="font-mono font-bold text-primary tracking-tighter text-xl">{code.code}</span>
                                 </div>
-                                <Button variant="ghost" size="sm" className="text-[10px] font-bold uppercase tracking-widest text-accent">Benchmarking</Button>
+                                <Button variant="ghost" size="sm" className="text-[10px] font-bold uppercase tracking-widest text-accent hover:bg-accent/10">
+                                  Benchmarking
+                                  <ArrowRight className="ml-2 h-3.5 w-3.5" />
+                                </Button>
                               </div>
                             ))}
                           </div>
@@ -381,31 +386,31 @@ export default function ProjectDetail() {
                   </CardContent>
                 </Card>
 
-                <Card className="border-none shadow-sm bg-muted/20">
+                <Card className="border-none shadow-sm bg-muted/10">
                   <CardHeader className="py-6 border-b bg-white">
-                    <CardTitle className="text-lg font-bold font-headline">Valuation Data Hub</CardTitle>
+                    <CardTitle className="text-lg font-bold font-headline text-primary">Data Connectors</CardTitle>
                     <CardDescription className="text-xs">Direct API access to industry benchmarkers</CardDescription>
                   </CardHeader>
-                  <CardContent className="p-8 space-y-6">
-                    <p className="text-sm text-muted-foreground mb-6 font-medium leading-relaxed">
-                      Based on identified codes, access valuation data from your connected subscriptions:
+                  <CardContent className="p-8 space-y-8">
+                    <p className="text-sm text-muted-foreground font-medium leading-relaxed">
+                      Access valuation multiples and risk ratios from connected premium subscriptions based on the identified codes.
                     </p>
                     <div className="grid grid-cols-2 gap-4">
                       {["IbisWorld", "BVR Resources", "DealStats", "PratStats", "BizComps", "MergerStats"].map((src) => (
-                        <Button key={src} variant="outline" className="justify-between text-xs font-bold uppercase tracking-widest h-14 px-6 bg-white border-none shadow-sm group hover:ring-2 hover:ring-primary/20">
+                        <Button key={src} variant="outline" className="justify-between text-xs font-bold uppercase tracking-widest h-16 px-6 bg-white border-none shadow-sm group hover:ring-2 hover:ring-primary/20 transition-all">
                           {src}
-                          <ExternalLink className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity text-primary" />
+                          <Database className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity text-primary" />
                         </Button>
                       ))}
                     </div>
-                    <div className="mt-8 p-6 bg-accent/10 rounded-xl border border-accent/20">
-                      <div className="flex items-center gap-3 mb-2">
-                        <Database className="h-4 w-4 text-accent" />
-                        <h4 className="text-xs font-bold uppercase tracking-widest text-accent">Connector Status</h4>
+                    <div className="mt-8 p-6 bg-accent/10 rounded-2xl border border-accent/20 flex gap-4">
+                      <Database className="h-5 w-5 text-accent shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="text-[10px] font-bold uppercase tracking-widest text-accent mb-1">Live Connection Status</h4>
+                        <p className="text-[11px] text-accent font-medium leading-relaxed">
+                          BVR Credentials Expired. IbisWorld syncing current industry multiples for {industryData?.suggestedIndustry || "unclassified"}.
+                        </p>
                       </div>
-                      <p className="text-[11px] text-accent/80 leading-relaxed font-medium">
-                        IbisWorld subscription is active. BVR credentials need update.
-                      </p>
                     </div>
                   </CardContent>
                 </Card>

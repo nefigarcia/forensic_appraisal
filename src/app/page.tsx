@@ -1,169 +1,234 @@
-import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
-import { AppSidebar } from "@/components/app-sidebar"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+
 import { Button } from "@/components/ui/button"
-import { 
-  FilePlus, 
-  Clock, 
-  TrendingUp, 
-  CheckCircle2, 
-  AlertCircle,
-  ArrowRight,
-  Users,
-  Briefcase,
-  Zap,
-  BarChart2
-} from "lucide-react"
+import { CheckCircle2, ShieldCheck, Zap, BarChart3, Search, FileText, ArrowRight, Globe } from "lucide-react"
 import Link from "next/link"
+import Image from "next/image"
 
-export default function Dashboard() {
-  const kpiData = [
-    { title: "Active Cases", value: "24", sub: "+3 this month", icon: Briefcase, color: "text-primary" },
-    { title: "Extraction Accuracy", value: "99.2%", sub: "Verified (5.2k points)", icon: Zap, color: "text-accent" },
-    { title: "Pending Review", value: "7", sub: "Needs sign-off", icon: Clock, color: "text-orange-500" },
-    { title: "Engagement Value", value: "$1.4M", sub: "Projected billing", icon: BarChart2, color: "text-green-500" },
-  ]
-
-  const recentValuations = [
-    { id: "1", name: "Global Logistics Group Valuation", client: "Preston & Reed LLP", status: "In Progress", date: "45m ago", priority: "High" },
-    { id: "2", name: "Marital Asset Audit - Smith", client: "Family Court Florida", status: "Completed", date: "4h ago", priority: "Medium" },
-    { id: "3", name: "Apex Realty Forensic Audit", client: "Federal Trade Comm.", status: "Review", date: "1d ago", priority: "Urgent" },
+export default function LandingPage() {
+  const pricingTiers = [
+    {
+      name: "Solo Appraiser",
+      price: "$199",
+      description: "Perfect for independent forensic accountants.",
+      features: [
+        "Up to 5 active cases",
+        "AI Document Extraction",
+        "Standard Valuation Models",
+        "Email Support",
+      ],
+      buttonText: "Start Free Trial",
+      accent: false,
+    },
+    {
+      name: "Valuation Firm",
+      price: "$599",
+      description: "Full suite for growing appraisal teams.",
+      features: [
+        "Unlimited active cases",
+        "Advanced Forensic Ledger",
+        "Multi-tenant Team Access",
+        "Custom Report Branding",
+        "Priority Support",
+      ],
+      buttonText: "Get Started",
+      accent: true,
+    },
+    {
+      name: "Enterprise",
+      price: "Custom",
+      description: "Industrial strength for large-scale audit firms.",
+      features: [
+        "White-label Reporting",
+        "API Data Access",
+        "Dedicated Account Manager",
+        "SSO & Custom Security",
+        "On-premise deployment options",
+      ],
+      buttonText: "Contact Sales",
+      accent: false,
+    },
   ]
 
   return (
-    <SidebarProvider>
-      <AppSidebar />
-      <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center justify-between px-6 border-b bg-white shadow-sm z-10">
-          <div className="flex items-center gap-4">
-            <SidebarTrigger />
-            <h1 className="text-xl font-bold font-headline text-foreground tracking-tight">Engagement Dashboard</h1>
+    <div className="flex flex-col min-h-screen bg-white">
+      {/* Header */}
+      <header className="flex h-20 items-center justify-between px-6 lg:px-12 border-b sticky top-0 bg-white/80 backdrop-blur-md z-50">
+        <div className="flex items-center gap-2">
+          <div className="bg-primary p-1.5 rounded-lg">
+            <ShieldCheck className="h-6 w-6 text-white" />
           </div>
-          <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" className="hidden sm:flex">
-              Generate Weekly Report
-            </Button>
-            <Button size="sm" className="bg-primary hover:bg-primary/90">
-              <FilePlus className="mr-2 h-4 w-4" />
-              New Valuation
+          <span className="text-xl font-bold font-headline tracking-tighter text-primary">ValuVault AI</span>
+        </div>
+        <nav className="hidden md:flex items-center gap-8 text-sm font-semibold uppercase tracking-widest text-muted-foreground">
+          <a href="#features" className="hover:text-primary transition-colors">Features</a>
+          <a href="#pricing" className="hover:text-primary transition-colors">Pricing</a>
+          <a href="#docs" className="hover:text-primary transition-colors">Docs</a>
+        </nav>
+        <div className="flex items-center gap-4">
+          <Link href="/dashboard">
+            <Button variant="ghost" className="font-bold uppercase text-xs tracking-widest">Sign In</Button>
+          </Link>
+          <Link href="/dashboard">
+            <Button className="bg-primary font-bold uppercase text-xs tracking-widest shadow-lg px-6">Book Demo</Button>
+          </Link>
+        </div>
+      </header>
+
+      <main className="flex-1">
+        {/* Hero Section */}
+        <section className="py-24 px-6 lg:px-12 max-w-7xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-accent/10 border border-accent/20 text-accent text-[10px] font-bold uppercase tracking-widest mb-8">
+            <Zap className="h-3.5 w-3.5 fill-accent" />
+            The Future of Forensic Appraisal
+          </div>
+          <h1 className="text-5xl lg:text-7xl font-extrabold font-headline tracking-tighter text-primary leading-[1.1] mb-8">
+            Professional AI Engine for <br />
+            <span className="text-accent italic">Forensic Accountants</span>
+          </h1>
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto font-medium mb-12">
+            Automate document extraction, generate audit-ready ledgers, and access real-time market multiples in one secure, enterprise-grade vault.
+          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Link href="/dashboard">
+              <Button className="h-16 px-10 text-lg font-bold uppercase tracking-widest bg-primary hover:bg-primary/90 shadow-2xl">
+                Launch Workbench
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Button>
+            </Link>
+            <Button variant="outline" className="h-16 px-10 text-lg font-bold uppercase tracking-widest border-2">
+              Watch Preview
             </Button>
           </div>
-        </header>
-        
-        <main className="flex-1 space-y-8 p-8 max-w-7xl mx-auto w-full">
-          {/* Stats Grid */}
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            {kpiData.map((kpi) => (
-              <Card key={kpi.title} className="border-none shadow-sm bg-white overflow-hidden">
-                <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                  <CardTitle className="text-xs font-bold uppercase text-muted-foreground tracking-wider">{kpi.title}</CardTitle>
-                  <kpi.icon className={`h-4 w-4 ${kpi.color}`} />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-3xl font-bold tracking-tight">{kpi.value}</div>
-                  <p className="text-[10px] font-medium text-muted-foreground mt-1 uppercase">{kpi.sub}</p>
-                </CardContent>
-                <div className="h-1 bg-muted">
-                  <div className={`h-full bg-primary`} style={{ width: '70%' }} />
+          <div className="mt-20 relative rounded-3xl overflow-hidden border-8 border-muted shadow-2xl">
+             <Image 
+              src="https://picsum.photos/seed/valuvault-hero/1200/600" 
+              alt="Forensic Dashboard" 
+              width={1200} 
+              height={600}
+              className="w-full object-cover"
+              data-ai-hint="dashboard professional"
+            />
+          </div>
+        </section>
+
+        {/* Features Grid */}
+        <section id="features" className="py-24 bg-muted/30 px-6 lg:px-12">
+          <div className="max-w-7xl mx-auto text-center mb-16">
+            <h2 className="text-3xl font-bold font-headline text-primary uppercase tracking-widest mb-4">Core Modules</h2>
+            <p className="text-muted-foreground font-medium">Built for the high-stakes requirements of court-ready valuations.</p>
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-7xl mx-auto">
+            {[
+              { icon: FileText, title: "AI Extraction", desc: "Instantly convert PDFs, tax returns, and messy Excels into structured forensic data." },
+              { icon: BarChart3, title: "Forensic Ledger", desc: "Automated YOY financial comparisons with real-time anomaly detection and variance tracking." },
+              { icon: Globe, title: "Industry Benchmarking", desc: "AI-suggested NAICS/SIC codes integrated with BVR, DealStats, and IbisWorld subscriptions." },
+              { icon: Search, title: "Discovery Intelligence", desc: "Natural language search across all matter binders to find patterns, distributions, or fraud markers." },
+              { icon: ShieldCheck, title: "Chain of Custody", desc: "Matter-level encryption with full audit logging for document ingestion and AI processing." },
+              { icon: Zap, title: "Valuation Modeler", desc: "Built-in EBITDA Multipliers, DCF, and Asset Approach calculators for rapid modeling." },
+            ].map((f, i) => (
+              <div key={i} className="p-10 rounded-3xl bg-white border border-border/50 shadow-sm hover:shadow-xl transition-all group">
+                <div className="bg-primary/5 p-4 rounded-2xl w-fit mb-6 group-hover:bg-primary transition-colors">
+                  <f.icon className="h-6 w-6 text-primary group-hover:text-white transition-colors" />
                 </div>
-              </Card>
+                <h3 className="text-xl font-bold text-primary mb-3">{f.title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed font-medium">{f.desc}</p>
+              </div>
             ))}
           </div>
+        </section>
 
-          <div className="grid gap-6 lg:grid-cols-7">
-            {/* Recent Projects */}
-            <Card className="lg:col-span-4 border-none shadow-sm">
-              <CardHeader>
-                <div className="flex justify-between items-center">
-                  <div>
-                    <CardTitle className="text-lg font-bold font-headline">Ongoing Valuations</CardTitle>
-                    <CardDescription>Track real-time progress of engagement lifecycles</CardDescription>
+        {/* Pricing */}
+        <section id="pricing" className="py-32 px-6 lg:px-12 max-w-7xl mx-auto">
+          <div className="text-center mb-20">
+            <h2 className="text-4xl font-bold font-headline text-primary tracking-tight mb-4 text-center">Transparent Value</h2>
+            <p className="text-muted-foreground font-medium">Choose the engagement level that matches your practice.</p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-8">
+            {pricingTiers.map((tier) => (
+              <div key={tier.name} className={`relative p-10 rounded-3xl border transition-all ${
+                tier.accent ? 'bg-primary text-white border-primary shadow-2xl scale-105 z-10' : 'bg-white border-border shadow-sm hover:border-primary/30'
+              }`}>
+                {tier.accent && (
+                  <div className="absolute top-0 right-0 m-6 bg-accent text-white text-[10px] font-black uppercase px-4 py-1 rounded-full shadow-lg">
+                    Most Popular
                   </div>
-                  <Link href="/projects">
-                    <Button variant="ghost" size="sm" className="text-xs font-semibold uppercase">View All</Button>
-                  </Link>
+                )}
+                <h3 className="text-xl font-bold uppercase tracking-widest mb-2">{tier.name}</h3>
+                <div className="flex items-baseline gap-1 mb-6">
+                  <span className="text-5xl font-black">{tier.price}</span>
+                  {tier.price !== 'Custom' && <span className="text-sm font-bold opacity-70 uppercase tracking-widest">/mo</span>}
                 </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {recentValuations.map((project) => (
-                    <div key={project.id} className="flex items-center justify-between p-4 rounded-xl border border-border/50 bg-white hover:border-primary/30 hover:shadow-md transition-all group cursor-pointer">
-                      <div className="flex items-center gap-4">
-                        <div className={`w-2 h-10 rounded-full ${
-                          project.priority === 'Urgent' ? 'bg-red-500' : 
-                          project.priority === 'High' ? 'bg-orange-500' : 'bg-blue-500'
-                        }`} />
-                        <div className="flex flex-col gap-1">
-                          <span className="font-bold text-primary text-sm group-hover:text-accent transition-colors">{project.name}</span>
-                          <div className="flex items-center gap-3 text-[10px] text-muted-foreground font-medium uppercase">
-                            <span className="flex items-center gap-1"><Users className="h-3 w-3" /> {project.client}</span>
-                            <span>•</span>
-                            <span>{project.date}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <span className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full ${
-                          project.status === "Completed" ? "bg-green-100 text-green-700" :
-                          project.status === "Review" ? "bg-orange-100 text-orange-700" :
-                          "bg-blue-100 text-blue-700"
-                        }`}>
-                          {project.status}
-                        </span>
-                        <Link href={`/projects/${project.id}`}>
-                          <Button variant="ghost" size="sm" className="group-hover:translate-x-1 transition-transform">
-                            <ArrowRight className="h-4 w-4" />
-                          </Button>
-                        </Link>
-                      </div>
+                <p className={`text-sm mb-8 font-medium ${tier.accent ? 'text-white/70' : 'text-muted-foreground'}`}>
+                  {tier.description}
+                </p>
+                <div className="space-y-4 mb-10">
+                  {tier.features.map((f) => (
+                    <div key={f} className="flex items-center gap-3">
+                      <CheckCircle2 className={`h-5 w-5 ${tier.accent ? 'text-accent' : 'text-primary'}`} />
+                      <span className="text-sm font-bold tracking-tight">{f}</span>
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Smart Insights Sidebar */}
-            <Card className="lg:col-span-3 border-none shadow-sm bg-primary text-white">
-              <CardHeader>
-                <CardTitle className="text-lg font-bold font-headline flex items-center gap-2">
-                  <Zap className="h-5 w-5 fill-accent text-accent" />
-                  Forensic Insights
-                </CardTitle>
-                <CardDescription className="text-white/60">AI-generated alerts for your workspace</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="rounded-xl bg-white/10 p-4 border border-white/10 backdrop-blur-sm">
-                  <h4 className="text-xs font-bold uppercase tracking-widest mb-3 text-white/80">Anomaly Detected</h4>
-                  <p className="text-sm leading-relaxed font-medium">
-                    Apex Realty Case: Unusual variance (24%) in 2023 payroll vs tax distributions. 
-                  </p>
-                  <Button variant="link" className="p-0 h-auto text-accent text-xs mt-2 font-bold uppercase tracking-wide">Investigate Ledger</Button>
-                </div>
-
-                <div className="space-y-4">
-                  <h4 className="text-xs font-bold uppercase tracking-widest text-white/80">Benchmark Updates</h4>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3 bg-white/5 rounded-lg border border-white/10">
-                      <div className="text-lg font-bold">12.4%</div>
-                      <div className="text-[10px] opacity-60 uppercase">Avg Multiplier (SaaS)</div>
-                    </div>
-                    <div className="p-3 bg-white/5 rounded-lg border border-white/10">
-                      <div className="text-lg font-bold">8.1x</div>
-                      <div className="text-[10px] opacity-60 uppercase">Avg EBITDA (Mfg)</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-4 border-t border-white/10">
-                  <Button className="w-full bg-white text-primary hover:bg-white/90 font-bold uppercase text-xs tracking-widest">
-                    Open ValuVault Knowledge Base
+                <Link href="/dashboard" className="block">
+                  <Button className={`w-full h-14 font-black uppercase tracking-widest text-xs rounded-xl ${
+                    tier.accent ? 'bg-accent hover:bg-accent/90 text-white shadow-xl' : 'bg-primary text-white shadow-md'
+                  }`}>
+                    {tier.buttonText}
                   </Button>
-                </div>
-              </CardContent>
-            </Card>
+                </Link>
+              </div>
+            ))}
           </div>
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+        </section>
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-primary py-20 px-6 lg:px-12 text-white border-t border-white/10">
+        <div className="max-w-7xl mx-auto grid md:grid-cols-4 gap-12">
+          <div className="space-y-6">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-6 w-6 text-accent" />
+              <span className="text-xl font-bold uppercase tracking-tighter">ValuVault AI</span>
+            </div>
+            <p className="text-sm text-white/50 leading-relaxed font-medium">
+              Enterprise security and AI precision for the most demanding valuation professional. 
+              Protected by matter-level encryption.
+            </p>
+          </div>
+          <div>
+            <h4 className="text-xs font-black uppercase tracking-widest mb-6 opacity-40">Software</h4>
+            <ul className="space-y-4 text-sm font-bold">
+              <li><Link href="/dashboard" className="hover:text-accent transition-colors">Forensic Workbench</Link></li>
+              <li><Link href="/dashboard" className="hover:text-accent transition-colors">Valuation Engine</Link></li>
+              <li><Link href="/dashboard" className="hover:text-accent transition-colors">Case Discovery</Link></li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="text-xs font-black uppercase tracking-widest mb-6 opacity-40">Resources</h4>
+            <ul className="space-y-4 text-sm font-bold">
+              <li><a href="#" className="hover:text-accent transition-colors">API Docs</a></li>
+              <li><a href="#" className="hover:text-accent transition-colors">Industry Reports</a></li>
+              <li><a href="#" className="hover:text-accent transition-colors">Knowledge Base</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="text-xs font-black uppercase tracking-widest mb-6 opacity-40">Contact</h4>
+            <ul className="space-y-4 text-sm font-bold">
+              <li>support@valuvault.ai</li>
+              <li>1-800-VALU-AI</li>
+              <li>New York, NY</li>
+            </ul>
+          </div>
+        </div>
+        <div className="max-w-7xl mx-auto mt-20 pt-10 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-6 text-[10px] font-black uppercase tracking-[0.2em] opacity-40">
+          <span>© 2024 ValuVault Technologies Inc.</span>
+          <div className="flex gap-8">
+            <a href="#">Privacy Policy</a>
+            <a href="#">Terms of Service</a>
+            <a href="#">Security Protocol</a>
+          </div>
+        </div>
+      </footer>
+    </div>
   )
 }
