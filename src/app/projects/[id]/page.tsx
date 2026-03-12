@@ -21,7 +21,8 @@ import {
   Database,
   CloudDownload,
   UploadCloud,
-  HardDrive
+  HardDrive,
+  FileCheck
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
@@ -57,6 +58,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { cn } from "@/lib/utils"
 
 export default function ProjectDetail() {
   const { id } = useParams()
@@ -66,6 +68,11 @@ export default function ProjectDetail() {
   const [loading, setLoading] = React.useState(true)
   const [isUploading, setIsUploading] = React.useState(false)
   const [uploadOpen, setUploadOpen] = React.useState(false)
+  
+  // File selection state
+  const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+  const [isDragging, setIsDragging] = React.useState(false)
 
   const loadData = React.useCallback(async () => {
     try {
@@ -122,14 +129,48 @@ export default function ProjectDetail() {
     }
   }
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setSelectedFile(e.target.files[0])
+    }
+  }
+
+  const onDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(true)
+  }
+
+  const onDragLeave = () => {
+    setIsDragging(false)
+  }
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      setSelectedFile(e.dataTransfer.files[0])
+    }
+  }
+
   const handleUpload = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setIsUploading(true)
     const formData = new FormData(e.currentTarget)
+    
+    // If we have a selected file, add it to formData
+    if (selectedFile) {
+      formData.set("file", selectedFile)
+      // If display name is empty, use file name
+      if (!formData.get("name")) {
+        formData.set("name", selectedFile.name)
+      }
+    }
+
     try {
       await addDocument(id as string, formData)
       toast({ title: "Document Added", description: "Source evidence persisted to custody binder." })
       setUploadOpen(false)
+      setSelectedFile(null)
       loadData()
     } catch (err) {
       toast({ title: "Error", description: "Failed to add document.", variant: "destructive" })
@@ -168,7 +209,10 @@ export default function ProjectDetail() {
               </Button>
             </Link>
             
-            <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+            <Dialog open={uploadOpen} onOpenChange={(open) => {
+              setUploadOpen(open);
+              if (!open) setSelectedFile(null);
+            }}>
               <DialogTrigger asChild>
                 <Button size="sm" className="bg-accent hover:bg-accent/90 shadow-lg text-xs font-bold uppercase h-10 px-6">
                   <Plus className="mr-2 h-4 w-4" />
@@ -197,16 +241,48 @@ export default function ProjectDetail() {
                     <form onSubmit={handleUpload} className="space-y-6">
                       <div className="grid gap-4">
                         <div className="space-y-2">
-                          <Label htmlFor="name" className="text-xs font-bold uppercase text-muted-foreground tracking-wider">File Selection</Label>
-                          <div className="flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-8 bg-muted/5 hover:bg-muted/10 transition-colors cursor-pointer group">
-                            <UploadCloud className="h-8 w-8 text-muted-foreground group-hover:text-primary transition-colors mb-2" />
-                            <p className="text-xs font-medium text-muted-foreground">Drag and drop or click to browse</p>
+                          <Label className="text-xs font-bold uppercase text-muted-foreground tracking-wider">File Selection</Label>
+                          <input 
+                            type="file" 
+                            className="hidden" 
+                            ref={fileInputRef} 
+                            onChange={handleFileChange}
+                          />
+                          <div 
+                            onClick={() => fileInputRef.current?.click()}
+                            onDragOver={onDragOver}
+                            onDragLeave={onDragLeave}
+                            onDrop={onDrop}
+                            className={cn(
+                              "flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-8 transition-all cursor-pointer group",
+                              isDragging ? "border-primary bg-primary/5" : "border-muted-foreground/20 bg-muted/5 hover:bg-muted/10",
+                              selectedFile ? "border-green-500/50 bg-green-50/50" : ""
+                            )}
+                          >
+                            {selectedFile ? (
+                              <>
+                                <FileCheck className="h-8 w-8 text-green-600 mb-2" />
+                                <p className="text-xs font-bold text-green-700">{selectedFile.name}</p>
+                                <p className="text-[10px] text-green-600/70 mt-1 uppercase">Click to change file</p>
+                              </>
+                            ) : (
+                              <>
+                                <UploadCloud className="h-8 w-8 text-muted-foreground group-hover:text-primary transition-colors mb-2" />
+                                <p className="text-xs font-medium text-muted-foreground">Drag and drop or click to browse</p>
+                              </>
+                            )}
                           </div>
                         </div>
                         <div className="grid grid-cols-1 gap-4">
                           <div className="space-y-2">
                             <Label htmlFor="name" className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Display Name</Label>
-                            <Input id="name" name="name" placeholder="e.g. Tax_Return_2023.pdf" required />
+                            <Input 
+                              id="name" 
+                              name="name" 
+                              placeholder="e.g. Tax_Return_2023.pdf" 
+                              defaultValue={selectedFile?.name || ""}
+                              required 
+                            />
                           </div>
                           <div className="space-y-2">
                             <Label htmlFor="type" className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Document Type</Label>
@@ -226,7 +302,7 @@ export default function ProjectDetail() {
                         </div>
                       </div>
                       <DialogFooter>
-                        <Button type="submit" disabled={isUploading} className="w-full bg-primary font-bold uppercase text-xs h-11">
+                        <Button type="submit" disabled={isUploading || !selectedFile} className="w-full bg-primary font-bold uppercase text-xs h-11">
                           {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <HardDrive className="mr-2 h-4 w-4" />}
                           Save to Local Binder
                         </Button>
@@ -324,6 +400,9 @@ export default function ProjectDetail() {
                 
                 <div className="space-y-6">
                   <Card className="bg-primary text-white border-none shadow-xl overflow-hidden relative">
+                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                      <Zap className="h-20 w-20 fill-white" />
+                    </div>
                     <CardHeader>
                       <CardTitle className="text-sm font-bold uppercase tracking-widest flex items-center gap-2">
                         {isExtracting ? <Loader2 className="h-4 w-4 animate-spin text-accent" /> : <Zap className="h-4 w-4 fill-accent text-accent" />}
