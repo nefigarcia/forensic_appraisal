@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from "react"
@@ -97,7 +96,7 @@ export default function ProjectDetail() {
     loadData();
   }, [loadData]);
 
-  // Memoized grouped data to prevent Rules of Hooks errors with conditional returns
+  // Memoized grouped data
   const groupedData = React.useMemo(() => {
     if (!caseData?.financialData) return {};
     return caseData.financialData.reduce((acc: any, item: any) => {
@@ -112,7 +111,23 @@ export default function ProjectDetail() {
     return Object.keys(groupedData).sort();
   }, [groupedData]);
 
-  // Pivot Logic for the Table (Memoized)
+  const statementYearRanges = React.useMemo(() => {
+    const ranges: Record<string, string> = {};
+    statementTypes.forEach(type => {
+      const years = groupedData[type]
+        .map((i: any) => parseInt(i.year))
+        .filter((y: any) => !isNaN(y))
+        .sort((a: number, b: number) => a - b);
+      if (years.length > 0) {
+        const min = years[0];
+        const max = years[years.length - 1];
+        ranges[type] = min === max ? `${min}` : `${min}-${max}`;
+      }
+    });
+    return ranges;
+  }, [statementTypes, groupedData]);
+
+  // Pivot Logic for the Table
   const pivotData = React.useMemo(() => {
     if (!activeStatementType || !groupedData[activeStatementType]) return { years: [], rows: [] };
     
@@ -124,7 +139,7 @@ export default function ProjectDetail() {
       const row: any = { lineItem: name };
       years.forEach(year => {
         const found = items.find((i: any) => i.lineItem === name && i.year === year);
-        row[year] = found; // Store object to access ID and verified status
+        row[year] = found; 
       });
       return row;
     });
@@ -166,7 +181,6 @@ export default function ProjectDetail() {
   const handleApprove = async () => {
     if (!activeStatementType || !pivotData.years.length) return
     try {
-      // Approve all years for this statement type
       for (const year of pivotData.years) {
         await approveFinancialValues(id as string, activeStatementType, year)
       }
@@ -366,7 +380,15 @@ export default function ProjectDetail() {
                                 <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">{doc.size} • {format(new Date(doc.createdAt), 'MMM d, yyyy')}</p>
                               </div>
                             </div>
-                            <Badge variant='outline' className="text-[10px] uppercase font-bold tracking-widest">{doc.status}</Badge>
+                            <Badge 
+                              variant='outline' 
+                              className={cn(
+                                "text-[10px] uppercase font-bold tracking-widest",
+                                (doc.status === "EXTRACTED" || doc.status === "VERIFIED") ? "bg-emerald-50 text-emerald-700 border-emerald-200" : ""
+                              )}
+                            >
+                              {(doc.status === "VERIFIED" || doc.status === "EXTRACTED") ? "EXTRACTED" : doc.status}
+                            </Badge>
                           </div>
                         ))}
                       </div>
@@ -402,6 +424,7 @@ export default function ProjectDetail() {
                     <div className="divide-y">
                       {statementTypes.map((type) => {
                         const isAllVerified = groupedData[type].every((i: any) => i.isVerified);
+                        const range = statementYearRanges[type];
                         return (
                           <button 
                             key={type} 
@@ -411,11 +434,13 @@ export default function ProjectDetail() {
                             <div className="flex items-center gap-3">
                               <FileSpreadsheet className={cn("h-4 w-4", activeStatementType === type ? "text-primary" : "text-muted-foreground")} />
                               <div className="flex flex-col">
-                                <span className={cn("text-[11px] font-bold", activeStatementType === type ? "text-primary" : "text-muted-foreground")}>{type}</span>
+                                <span className={cn("text-[11px] font-bold", activeStatementType === type ? "text-primary" : "text-muted-foreground")}>
+                                  {type} {range ? `(${range})` : ''}
+                                </span>
                                 <span className="text-[9px] font-bold text-muted-foreground opacity-60 uppercase">Multi-Year Audit View</span>
                               </div>
                             </div>
-                            {isAllVerified && <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
+                            {isAllVerified && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
                           </button>
                         );
                       })}
@@ -431,7 +456,7 @@ export default function ProjectDetail() {
                         <CardTitle className="text-sm font-bold uppercase tracking-widest">{activeStatementType || "Select Audit Target"}</CardTitle>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button onClick={handleApprove} variant="outline" size="sm" className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100 text-[10px] font-bold uppercase h-9">
+                        <Button onClick={handleApprove} variant="outline" size="sm" className="bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 text-[10px] font-bold uppercase h-9">
                           <CheckCircle2 className="mr-2 h-3.5 w-3.5" /> Approve Report
                         </Button>
                         <Button onClick={() => setIsEditingLedger(!isEditingLedger)} variant="outline" size="sm" className="text-[10px] font-bold uppercase h-9">
@@ -494,7 +519,7 @@ export default function ProjectDetail() {
                       </Table>
                     </CardContent>
                     <CardFooter className="bg-muted/5 py-3 border-t">
-                      <div className="flex items-center gap-2 text-[10px] font-bold text-green-600 uppercase tracking-widest">
+                      <div className="flex items-center gap-2 text-[10px] font-bold text-emerald-600 uppercase tracking-widest">
                         <CheckCircle2 className="h-3 w-3" />
                         Multi-Year Comparison Integrity Verified
                       </div>

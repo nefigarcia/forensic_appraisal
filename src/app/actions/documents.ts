@@ -48,8 +48,8 @@ export async function addDocument(caseId: string, formData: FormData) {
         name: displayName || file.name,
         type: type || file.type,
         size: fileSize,
-        s3Key: fileKey, // Now correctly persisting the key
-        status: "VERIFIED",
+        s3Key: fileKey, 
+        status: "EXTRACTED",
       },
     });
 
