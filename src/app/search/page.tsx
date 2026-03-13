@@ -72,7 +72,7 @@ export default function SearchPage() {
                   </div>
                   <Link href={`/projects/${item.id}`}>
                     <Button variant="ghost" size="sm">
-                      Open Matter <ArrowRight className="ml-2 h-4 w-4" />
+                      Open Case <ArrowRight className="ml-2 h-4 w-4" />
                     </Button>
                   </Link>
                 </CardHeader>

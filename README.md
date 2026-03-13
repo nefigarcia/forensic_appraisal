@@ -10,7 +10,7 @@ Enterprise-grade AI platform for forensic accountants and valuation specialists.
 
 ### 2. Case Management (Module 2)
 - **Feature**: Matter-level organization.
-- **Workflow**: Navigate to **Valuations** to create a "New Forensic Matter." This initializes a permanent record in the MySQL database.
+- **Workflow**: Navigate to **Valuations** to create a "New case." This initializes a permanent record in the MySQL database.
 
 ### 3. Document Custody Binder (Module 3)
 - **Feature**: Chain-of-custody tracking.

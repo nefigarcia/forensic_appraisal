@@ -319,7 +319,7 @@ export default function ProjectDetail() {
                   </div>
                   <DialogFooter>
                     <Button type="submit" disabled={isUploading || !selectedFile} className="w-full bg-primary font-bold uppercase text-xs h-11">
-                      {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Save to Local Binder"}
+                      {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Save"}
                     </Button>
                   </DialogFooter>
                 </form>

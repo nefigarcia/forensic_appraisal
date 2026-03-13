@@ -103,7 +103,7 @@ export default function ProjectsPage() {
               <DialogContent className="sm:max-w-[425px]">
                 <form onSubmit={handleCreateCase}>
                   <DialogHeader>
-                    <DialogTitle>New Forensic Matter</DialogTitle>
+                    <DialogTitle>New Case</DialogTitle>
                     <DialogDescription>
                       Initialize a new valuation case in the workspace.
                     </DialogDescription>
@@ -190,7 +190,7 @@ export default function ProjectsPage() {
                       </span>
                       <Link href={`/projects/${project.id}`}>
                         <Button variant="ghost" className="font-bold uppercase text-[10px] tracking-widest group-hover:translate-x-1 transition-transform">
-                          Open Matter
+                          Open Case
                           <ArrowRight className="ml-2 h-4 w-4" />
                         </Button>
                       </Link>
@@ -200,7 +200,7 @@ export default function ProjectsPage() {
               </Card>
             ))}
             {!loading && filteredProjects.length === 0 && (
-              <div className="text-center py-20 text-muted-foreground">No matters found.</div>
+              <div className="text-center py-20 text-muted-foreground">No cases found.</div>
             )}
           </div>
         </main>
