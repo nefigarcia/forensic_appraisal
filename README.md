@@ -12,21 +12,24 @@ Enterprise-grade AI platform for forensic accountants and valuation specialists.
 - **Feature**: Matter-level organization.
 - **Workflow**: Navigate to **Valuations** to create a "New case." This initializes a permanent record in the MySQL database.
 
-### 3. Document Custody Binder (Module 3)
-- **Feature**: Chain-of-custody tracking.
-- **Workflow**: Inside a Case, use **Upload Source** to attach evidence. Files are stored in **AWS S3** and metadata (including the S3 key) is persisted to the `Document` table. Supports both Local Upload and Cloud Import (SharePoint/OneDrive).
+### 3. Document Custody Binder & Data Connectors (Module 3)
+- **Feature**: Chain-of-custody tracking & Enterprise Data Pipeline.
+- **Workflow**: 
+  - **Saving (Mirroring)**: When uploading to the **Custody Binder**, you can select **SharePoint/OneDrive** to mirror the file to your firm's official cloud archive.
+  - **Getting (Ingestion)**: Future modules will allow importing historical data directly from these connectors.
+  - **Market Data**: Connectors for **IbisWorld** and **BVR** are used to fetch (Get) industry benchmarks for valuation modeling.
 
 ### 4. AI Extraction & Forensic Ledger (Modules 4 & 5)
 - **Feature**: Automated financial normalization.
-- **Workflow**: Click **Run Extraction** on a document. Genkit AI pulls the real file from S3, parses the data using visual OCR (supports images/PDFs), and maps values to a structured format. These are saved as `FinancialValue` records and displayed in the **Forensic Ledger**. You can manually edit and verify these values.
+- **Workflow**: Click **Run Extraction** on a document. Genkit AI pulls the real file from S3, parses the data using visual OCR (supports images/PDFs), and maps values to a multi-year **Forensic Ledger**. You can manually edit, verify, and normalize these values across multiple years.
 
 ### 5. Industry Classification AI (Module 6)
 - **Feature**: Automatic NAICS/SIC profiling.
-- **Workflow**: In the **Benchmarks** tab, click **Suggest Industry Codes**. AI analyzes the business and saves the classification to the `IndustryClassification` table.
+- **Workflow**: In the **Benchmarks** tab, click **Suggest Industry Codes**. AI analyzes the business and saves the classification to the `IndustryClassification` table, linking it to market multiples from BVR/IbisWorld.
 
 ### 6. Valuation Engine (Module 8)
 - **Feature**: Market approach modeling.
-- **Workflow**: Use the **Open Modeler** button to adjust sliders for EBITDA, Multipliers, and Growth. Click **Save Model** to persist these inputs to the `ValuationModel` table.
+- **Workflow**: Use the **Open Modeler** button to adjust sliders for EBITDA, Multipliers, and Growth. Click **Save Model** to persist these inputs to the `ValuationModel` table for court-ready reporting.
 
 ### 7. Discovery Search (Module 9)
 - **Feature**: Natural language archive search.
@@ -46,28 +49,15 @@ To enable real SharePoint/OneDrive connections for your clients:
    - Add `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, and `MICROSOFT_REDIRECT_URI` to your `.env`.
 
 ## 🌍 Production Deployment (Vercel)
-When deploying to production, follow these steps:
+When deploying to production:
 
-1. **Azure Portal**:
-   - Add a new **Redirect URI** to your App Registration: `https://your-domain.vercel.app/api/connect/microsoft/callback`.
-2. **Vercel Dashboard**:
-   - Go to **Settings > Environment Variables**.
-   - Add `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`.
-   - Set `MICROSOFT_REDIRECT_URI` to your production URL: `https://your-domain.vercel.app/api/connect/microsoft/callback`.
-   - Set `DATABASE_URL` (MySQL/PlanetScale/Supabase).
-   - Set `AWS_S3_BUCKET_NAME`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`.
-3. **Prisma**:
-   - Ensure you run `npx prisma db push` against your production database.
+1. **Azure Portal**: Add a new **Redirect URI**: `https://your-domain.vercel.app/api/connect/microsoft/callback`.
+2. **Vercel Dashboard**: Add `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, and update `MICROSOFT_REDIRECT_URI` to the production URL.
 
 ## 📦 Tech Stack
 - **Framework**: Next.js 15 (App Router)
 - **Database**: MySQL (via Prisma ORM)
-- **Storage**: AWS S3 (Forensic Binder)
+- **Storage**: AWS S3 (Forensic Binder) + SharePoint/OneDrive (Mirroring)
 - **AI Engine**: Genkit (Google Gemini 2.5 Flash)
 - **Styling**: Tailwind CSS + ShadCN UI
 - **Auth**: Custom JWT-based Session Management
-
-## 📝 Setup
-1. Ensure `DATABASE_URL`, `AWS_S3_BUCKET_NAME`, and Microsoft credentials are set in `.env`.
-2. Run `npx prisma db push` to initialize tables.
-3. Run `npm run dev`.

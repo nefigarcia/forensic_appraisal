@@ -6,6 +6,13 @@ import { revalidatePath } from "next/cache";
 import { s3Client, BUCKET_NAME } from "@/lib/s3-client";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 
+/**
+ * addDocument - Handles the ingestion of forensic evidence.
+ * 
+ * 1. Primary: Uploads to the secure S3 Forensic Vault (internal custody).
+ * 2. Secondary (Optional): Mirrors the file to an external firm-level provider 
+ *    (SharePoint/OneDrive) if selected by the appraiser.
+ */
 export async function addDocument(caseId: string, formData: FormData) {
   const session = await getSession();
   if (!session) throw new Error("Unauthorized");
@@ -20,10 +27,11 @@ export async function addDocument(caseId: string, formData: FormData) {
   const arrayBuffer = await file.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
   
+  // Create a secure, unique key for the forensic binder
   const fileKey = `cases/${caseId}/${Date.now()}-${file.name.replace(/\s+/g, '_')}`;
 
   try {
-    // 1. Primary Upload to S3 Forensic Vault
+    // 1. Primary Upload to S3 Forensic Vault (Internal Record)
     await s3Client.send(
       new PutObjectCommand({
         Bucket: BUCKET_NAME,
@@ -38,7 +46,7 @@ export async function addDocument(caseId: string, formData: FormData) {
       })
     );
 
-    // 2. Mirror to External Provider if selected
+    // 2. Mirror to External Provider (Firm Archive) if selected
     if (storageProvider !== "s3") {
       const connector = await prisma.externalConnector.findUnique({
         where: {
@@ -51,9 +59,9 @@ export async function addDocument(caseId: string, formData: FormData) {
 
       if (connector && connector.accessToken && storageProvider === 'microsoft') {
         try {
-          // Attempting a direct upload to Microsoft Graph (SharePoint/OneDrive root)
+          // Mirroring to Microsoft Graph (SharePoint/OneDrive)
           const uploadUrl = `https://graph.microsoft.com/v1.0/me/drive/root:/ValuVault_Archive/${caseId}/${file.name}:/content`;
-          await fetch(uploadUrl, {
+          const response = await fetch(uploadUrl, {
             method: 'PUT',
             headers: {
               'Authorization': `Bearer ${connector.accessToken}`,
@@ -61,13 +69,18 @@ export async function addDocument(caseId: string, formData: FormData) {
             },
             body: buffer
           });
+
+          if (!response.ok) {
+            console.error("Mirroring response failed:", await response.text());
+          }
         } catch (mirrorError) {
+          // We log mirroring errors but don't fail the primary upload
           console.error("External mirroring failed, continuing with S3 only:", mirrorError);
         }
       }
     }
 
-    // 3. Persist metadata to MySQL
+    // 3. Persist metadata to MySQL for the Custody Binder UI
     const fileSize = (file.size / (1024 * 1024)).toFixed(2) + " MB";
     
     const doc = await prisma.document.create({
@@ -77,7 +90,7 @@ export async function addDocument(caseId: string, formData: FormData) {
         type: type || file.type,
         size: fileSize,
         s3Key: fileKey, 
-        status: "EXTRACTED",
+        status: "EXTRACTED", // Default status as requested
       },
     });
 
