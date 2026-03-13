@@ -14,11 +14,11 @@ Enterprise-grade AI platform for forensic accountants and valuation specialists.
 
 ### 3. Document Custody Binder (Module 3)
 - **Feature**: Chain-of-custody tracking.
-- **Workflow**: Inside a Case, use **Upload Source** to attach evidence. Files are stored in **AWS S3** and metadata (including the S3 key) is persisted to the `Document` table.
+- **Workflow**: Inside a Case, use **Upload Source** to attach evidence. Files are stored in **AWS S3** and metadata (including the S3 key) is persisted to the `Document` table. Supports both Local Upload and Cloud Import (SharePoint/OneDrive).
 
 ### 4. AI Extraction & Forensic Ledger (Modules 4 & 5)
 - **Feature**: Automated financial normalization.
-- **Workflow**: Click **Run Extraction** on a document. Genkit AI pulls the real file from S3, parses the data, and maps values to a structured format. These are saved as `FinancialValue` records and displayed in the **Forensic Ledger**. You can manually edit and verify these values.
+- **Workflow**: Click **Run Extraction** on a document. Genkit AI pulls the real file from S3, parses the data using visual OCR (supports images/PDFs), and maps values to a structured format. These are saved as `FinancialValue` records and displayed in the **Forensic Ledger**. You can manually edit and verify these values.
 
 ### 5. Industry Classification AI (Module 6)
 - **Feature**: Automatic NAICS/SIC profiling.
@@ -41,8 +41,23 @@ To enable real SharePoint/OneDrive connections for your clients:
    - **Redirect URI**: Web -> `http://localhost:9002/api/connect/microsoft/callback`.
 2. **Permissions**:
    - Add `Files.Read.All`, `Sites.Read.All`, `User.Read`, and `offline_access`.
+   - **Crucial**: Click "Grant admin consent" for your organization.
 3. **Environment**:
-   - Add `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` to your `.env`.
+   - Add `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, and `MICROSOFT_REDIRECT_URI` to your `.env`.
+
+## 🌍 Production Deployment (Vercel)
+When deploying to production, follow these steps:
+
+1. **Azure Portal**:
+   - Add a new **Redirect URI** to your App Registration: `https://your-domain.vercel.app/api/connect/microsoft/callback`.
+2. **Vercel Dashboard**:
+   - Go to **Settings > Environment Variables**.
+   - Add `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`.
+   - Set `MICROSOFT_REDIRECT_URI` to your production URL: `https://your-domain.vercel.app/api/connect/microsoft/callback`.
+   - Set `DATABASE_URL` (MySQL/PlanetScale/Supabase).
+   - Set `AWS_S3_BUCKET_NAME`, `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`.
+3. **Prisma**:
+   - Ensure you run `npx prisma db push` against your production database.
 
 ## 📦 Tech Stack
 - **Framework**: Next.js 15 (App Router)
