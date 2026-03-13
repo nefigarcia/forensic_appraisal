@@ -13,18 +13,17 @@ export async function addDocument(caseId: string, formData: FormData) {
   const file = formData.get("file") as File;
   const displayName = formData.get("name") as string;
   const type = formData.get("type") as string;
+  const storageProvider = formData.get("storageProvider") as string || "s3";
 
   if (!file) throw new Error("No file provided");
 
-  // Convert File to Buffer for S3
   const arrayBuffer = await file.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
   
-  // Generate a unique S3 key
   const fileKey = `cases/${caseId}/${Date.now()}-${file.name.replace(/\s+/g, '_')}`;
 
   try {
-    // 1. Upload to S3
+    // 1. Primary Upload to S3 Forensic Vault
     await s3Client.send(
       new PutObjectCommand({
         Bucket: BUCKET_NAME,
@@ -39,7 +38,36 @@ export async function addDocument(caseId: string, formData: FormData) {
       })
     );
 
-    // 2. Persist metadata to MySQL via Prisma
+    // 2. Mirror to External Provider if selected
+    if (storageProvider !== "s3") {
+      const connector = await prisma.externalConnector.findUnique({
+        where: {
+          organizationId_provider: {
+            organizationId: session.organizationId,
+            provider: storageProvider
+          }
+        }
+      });
+
+      if (connector && connector.accessToken && storageProvider === 'microsoft') {
+        try {
+          // Attempting a direct upload to Microsoft Graph (SharePoint/OneDrive root)
+          const uploadUrl = `https://graph.microsoft.com/v1.0/me/drive/root:/ValuVault_Archive/${caseId}/${file.name}:/content`;
+          await fetch(uploadUrl, {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${connector.accessToken}`,
+              'Content-Type': file.type
+            },
+            body: buffer
+          });
+        } catch (mirrorError) {
+          console.error("External mirroring failed, continuing with S3 only:", mirrorError);
+        }
+      }
+    }
+
+    // 3. Persist metadata to MySQL
     const fileSize = (file.size / (1024 * 1024)).toFixed(2) + " MB";
     
     const doc = await prisma.document.create({
@@ -56,7 +84,7 @@ export async function addDocument(caseId: string, formData: FormData) {
     revalidatePath(`/projects/${caseId}`);
     return { success: true, docId: doc.id };
   } catch (error) {
-    console.error("S3 Upload Error:", error);
+    console.error("Upload Error:", error);
     throw new Error("Failed to upload document to secure custody binder.");
   }
 }

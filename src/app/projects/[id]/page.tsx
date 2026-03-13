@@ -21,13 +21,15 @@ import {
   Save,
   Download,
   FileSpreadsheet,
-  Edit3
+  Edit3,
+  Database
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { getCaseDetails } from "@/app/actions/cases"
 import { addDocument } from "@/app/actions/documents"
 import { runFinancialExtraction, runIndustryAnalysis, updateFinancialValue, approveFinancialValues } from "@/app/actions/ai-actions"
+import { getExternalConnections } from "@/app/actions/connectors"
 import { toast } from "@/hooks/use-toast"
 import {
   Table,
@@ -67,6 +69,7 @@ export default function ProjectDetail() {
   const [loading, setLoading] = React.useState(true)
   const [isUploading, setIsUploading] = React.useState(false)
   const [uploadOpen, setUploadOpen] = React.useState(false)
+  const [availableConnectors, setAvailableConnectors] = React.useState<any[]>([])
   
   // Ledger State
   const [isEditingLedger, setIsEditingLedger] = React.useState(false)
@@ -78,10 +81,14 @@ export default function ProjectDetail() {
 
   const loadData = React.useCallback(async () => {
     try {
-      const data = await getCaseDetails(id as string);
-      setCaseData(data);
+      const [data, connectors] = await Promise.all([
+        getCaseDetails(id as string),
+        getExternalConnections()
+      ]);
       
-      // Auto-select first statement type if none selected
+      setCaseData(data);
+      setAvailableConnectors(connectors);
+      
       if (data?.financialData?.length > 0 && !activeStatementType) {
         setActiveStatementType(data.financialData[0].statementType);
       }
@@ -96,7 +103,6 @@ export default function ProjectDetail() {
     loadData();
   }, [loadData]);
 
-  // Memoized grouped data
   const groupedData = React.useMemo(() => {
     if (!caseData?.financialData) return {};
     return caseData.financialData.reduce((acc: any, item: any) => {
@@ -127,7 +133,6 @@ export default function ProjectDetail() {
     return ranges;
   }, [statementTypes, groupedData]);
 
-  // Pivot Logic for the Table
   const pivotData = React.useMemo(() => {
     if (!activeStatementType || !groupedData[activeStatementType]) return { years: [], rows: [] };
     
@@ -291,10 +296,10 @@ export default function ProjectDetail() {
                   Upload Source
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[500px]">
+              <DialogContent className="sm:max-w-[550px]">
                 <DialogHeader>
                   <DialogTitle>Add Forensic Evidence</DialogTitle>
-                  <DialogDescription>Attach documents or images to the matter's custody binder for audit verification.</DialogDescription>
+                  <DialogDescription>Attach documents to the matter binder. If mirrored storage is connected, you can sync files to your firm's external cloud.</DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleUpload} className="space-y-6 mt-4">
                   <div className="space-y-2">
@@ -313,13 +318,13 @@ export default function ProjectDetail() {
                       )}
                     </div>
                   </div>
-                  <div className="grid gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="name" className="text-xs font-bold uppercase tracking-wider">Display Name</Label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2 col-span-2">
+                      <Label htmlFor="name" className="text-[10px] font-bold uppercase tracking-wider">Display Name</Label>
                       <Input id="name" name="name" defaultValue={selectedFile?.name || ""} required />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="type" className="text-xs font-bold uppercase tracking-wider">Document Type</Label>
+                      <Label htmlFor="type" className="text-[10px] font-bold uppercase tracking-wider">Doc Type</Label>
                       <Select name="type" defaultValue="Income Statement">
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -330,10 +335,26 @@ export default function ProjectDetail() {
                         </SelectContent>
                       </Select>
                     </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="storageProvider" className="text-[10px] font-bold uppercase tracking-wider">Storage Vault</Label>
+                      <Select name="storageProvider" defaultValue="s3">
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="s3">S3 Forensic Vault (Primary)</SelectItem>
+                          {availableConnectors.map(conn => (
+                            <SelectItem key={conn.id} value={conn.provider}>
+                              {conn.provider === 'microsoft' ? 'SharePoint / OneDrive' : conn.provider.toUpperCase()}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                   <DialogFooter>
                     <Button type="submit" disabled={isUploading || !selectedFile} className="w-full bg-primary font-bold uppercase text-xs h-11">
-                      {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Save"}
+                      {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Save & Synchronize"}
                     </Button>
                   </DialogFooter>
                 </form>
