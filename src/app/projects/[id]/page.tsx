@@ -15,7 +15,6 @@ import {
   Loader2,
   Globe,
   Calculator,
-  Database,
   UploadCloud,
   FileCheck,
   ImageIcon,
@@ -23,7 +22,6 @@ import {
   Save,
   Download,
   FileSpreadsheet,
-  Send,
   Edit3
 } from "lucide-react"
 import Link from "next/link"
@@ -73,7 +71,7 @@ export default function ProjectDetail() {
   
   // Ledger State
   const [isEditingLedger, setIsEditingLedger] = React.useState(false)
-  const [activeGroupKey, setActiveGroupKey] = React.useState<string | null>(null)
+  const [activeStatementType, setActiveStatementType] = React.useState<string | null>(null)
   const [savingId, setSavingId] = React.useState<string | null>(null)
 
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
@@ -84,17 +82,16 @@ export default function ProjectDetail() {
       const data = await getCaseDetails(id as string);
       setCaseData(data);
       
-      // Auto-select first grouping if none selected
-      if (data?.financialData?.length > 0 && !activeGroupKey) {
-        const first = data.financialData[0];
-        setActiveGroupKey(`${first.statementType} - ${first.year}`);
+      // Auto-select first statement type if none selected
+      if (data?.financialData?.length > 0 && !activeStatementType) {
+        setActiveStatementType(data.financialData[0].statementType);
       }
     } catch (e) {
       toast({ title: "Error", description: "Could not load case details", variant: "destructive" });
     } finally {
       setLoading(false);
     }
-  }, [id, activeGroupKey])
+  }, [id, activeStatementType])
 
   React.useEffect(() => {
     loadData();
@@ -132,11 +129,13 @@ export default function ProjectDetail() {
   }
 
   const handleApprove = async () => {
-    if (!activeGroupKey) return
-    const [type, year] = activeGroupKey.split(" - ");
+    if (!activeStatementType || !pivotData.years.length) return
     try {
-      await approveFinancialValues(id as string, type, year)
-      toast({ title: "Statement Approved", description: "All entries marked as verified." })
+      // Approve all years for this statement type
+      for (const year of pivotData.years) {
+        await approveFinancialValues(id as string, activeStatementType, year)
+      }
+      toast({ title: "Statement Approved", description: "All entries for this report marked as verified." })
       await loadData()
     } catch (error) {
       toast({ title: "Approval Error", variant: "destructive" })
@@ -144,27 +143,24 @@ export default function ProjectDetail() {
   }
 
   const handleExport = () => {
-    if (!currentStatementData.length) return;
-    const headers = ["Line Item", "Year", "Type", "Value", "Currency", "Verified"];
-    const rows = currentStatementData.map((item: any) => [
-      `"${item.lineItem}"`,
-      item.year,
-      `"${item.statementType}"`,
-      item.value,
-      item.currency,
-      item.isVerified ? "Yes" : "No"
-    ]);
-    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+    if (!pivotData.rows.length) return;
+    const headers = ["Line Item / Account", ...pivotData.years];
+    const csvRows = pivotData.rows.map((row: any) => {
+      const lineValues = pivotData.years.map(year => row[year]?.value || 0);
+      return [`"${row.lineItem}"`, ...lineValues];
+    });
+    
+    const csvContent = [headers, ...csvRows].map(e => e.join(",")).join("\n");
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
-    link.setAttribute("download", `${activeGroupKey?.replace(/\s+/g, '_')}_Forensic_Export.csv`);
+    link.setAttribute("download", `${activeStatementType?.replace(/\s+/g, '_')}_Forensic_Ledger.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast({ title: "Export Started", description: "Your CSV file is downloading." });
+    toast({ title: "Export Started", description: "Multi-year CSV file is downloading." });
   }
 
   const handleIndustryAnalysis = async () => {
@@ -212,16 +208,35 @@ export default function ProjectDetail() {
   if (loading) return <div className="flex items-center justify-center min-h-screen"><Loader2 className="animate-spin text-primary h-8 w-8" /></div>;
   if (!caseData) return <div className="p-8 text-center">Case not found.</div>;
 
-  // Group by Statement Type AND Year
+  // Group by Statement Type only
   const groupedData = caseData.financialData.reduce((acc: any, item: any) => {
-    const key = `${item.statementType} - ${item.year}`;
+    const key = item.statementType;
     if (!acc[key]) acc[key] = [];
     acc[key].push(item);
     return acc;
   }, {});
 
-  const currentStatementData = activeGroupKey ? groupedData[activeGroupKey] || [] : [];
-  const groupKeys = Object.keys(groupedData).sort();
+  const statementTypes = Object.keys(groupedData).sort();
+
+  // Pivot Logic for the Table
+  const pivotData = React.useMemo(() => {
+    if (!activeStatementType || !groupedData[activeStatementType]) return { years: [], rows: [] };
+    
+    const items = groupedData[activeStatementType];
+    const years = Array.from(new Set(items.map((i: any) => i.year))).sort() as string[];
+    const lineItemNames = Array.from(new Set(items.map((i: any) => i.lineItem))).sort() as string[];
+    
+    const rows = lineItemNames.map(name => {
+      const row: any = { lineItem: name };
+      years.forEach(year => {
+        const found = items.find((i: any) => i.lineItem === name && i.year === year);
+        row[year] = found; // Store object to access ID and verified status
+      });
+      return row;
+    });
+
+    return { years, rows };
+  }, [activeStatementType, groupedData]);
 
   return (
     <SidebarProvider>
@@ -309,7 +324,7 @@ export default function ProjectDetail() {
         </header>
 
         <main className="flex-1 p-8 bg-background/30 max-w-7xl mx-auto w-full">
-          <Tabs defaultValue="documents" className="space-y-6">
+          <Tabs defaultValue="analysis" className="space-y-6">
             <TabsList className="bg-white/80 border w-full justify-start p-1 h-12 shadow-sm rounded-xl">
               <TabsTrigger value="documents" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <FileText className="mr-2 h-4 w-4" />
@@ -370,36 +385,36 @@ export default function ProjectDetail() {
             <TabsContent value="analysis">
               <div className="space-y-2 mb-6">
                 <h2 className="text-2xl font-black text-primary tracking-tight">Forensic Financial Ledger</h2>
-                <p className="text-sm text-muted-foreground font-medium">AI has automatically normalized and extracted financial data. Grouped by statement type and year for precise auditing.</p>
+                <p className="text-sm text-muted-foreground font-medium">AI normalization with multi-year comparison view.</p>
               </div>
 
               <div className="grid gap-6 lg:grid-cols-12 items-start">
                 <Card className="lg:col-span-3 border-none shadow-sm overflow-hidden bg-white">
                   <CardHeader className="bg-muted/30 border-b py-4">
-                    <CardTitle className="text-xs font-bold uppercase tracking-widest">Detected Statements & Years</CardTitle>
+                    <CardTitle className="text-xs font-bold uppercase tracking-widest">Reports Detected</CardTitle>
                   </CardHeader>
                   <CardContent className="p-0">
                     <div className="divide-y">
-                      {groupKeys.map((key) => {
-                        const isVerified = groupedData[key].every((i: any) => i.isVerified);
+                      {statementTypes.map((type) => {
+                        const isAllVerified = groupedData[type].every((i: any) => i.isVerified);
                         return (
                           <button 
-                            key={key} 
-                            onClick={() => setActiveGroupKey(key)} 
-                            className={cn("w-full flex items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors", activeGroupKey === key ? "bg-primary/5 border-l-4 border-primary" : "")}
+                            key={type} 
+                            onClick={() => setActiveStatementType(type)} 
+                            className={cn("w-full flex items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors", activeStatementType === type ? "bg-primary/5 border-l-4 border-primary" : "")}
                           >
                             <div className="flex items-center gap-3">
-                              <FileSpreadsheet className={cn("h-4 w-4", activeGroupKey === key ? "text-primary" : "text-muted-foreground")} />
+                              <FileSpreadsheet className={cn("h-4 w-4", activeStatementType === type ? "text-primary" : "text-muted-foreground")} />
                               <div className="flex flex-col">
-                                <span className={cn("text-[11px] font-bold", activeGroupKey === key ? "text-primary" : "text-muted-foreground")}>{key.split(' - ')[0]}</span>
-                                <span className="text-[9px] font-bold text-muted-foreground opacity-60 uppercase">Year: {key.split(' - ')[1]}</span>
+                                <span className={cn("text-[11px] font-bold", activeStatementType === type ? "text-primary" : "text-muted-foreground")}>{type}</span>
+                                <span className="text-[9px] font-bold text-muted-foreground opacity-60 uppercase">Multiple Years Detected</span>
                               </div>
                             </div>
-                            {isVerified && <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
+                            {isAllVerified && <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
                           </button>
                         );
                       })}
-                      {groupKeys.length === 0 && <div className="p-8 text-center text-xs text-muted-foreground">Run extraction to detect statements</div>}
+                      {statementTypes.length === 0 && <div className="p-8 text-center text-xs text-muted-foreground">Run extraction to detect statements</div>}
                     </div>
                   </CardContent>
                 </Card>
@@ -408,53 +423,63 @@ export default function ProjectDetail() {
                   <Card className="border-none shadow-sm overflow-hidden bg-white">
                     <CardHeader className="flex flex-row items-center justify-between border-b py-4 bg-muted/10">
                       <div>
-                        <CardTitle className="text-sm font-bold uppercase tracking-widest">{activeGroupKey || "Select Audit Target"}</CardTitle>
+                        <CardTitle className="text-sm font-bold uppercase tracking-widest">{activeStatementType || "Select Audit Target"}</CardTitle>
                       </div>
                       <div className="flex items-center gap-2">
                         <Button onClick={handleApprove} variant="outline" size="sm" className="bg-green-50 border-green-200 text-green-700 hover:bg-green-100 text-[10px] font-bold uppercase h-9">
-                          <CheckCircle2 className="mr-2 h-3.5 w-3.5" /> Approve Audit
+                          <CheckCircle2 className="mr-2 h-3.5 w-3.5" /> Approve Report
                         </Button>
                         <Button onClick={() => setIsEditingLedger(!isEditingLedger)} variant="outline" size="sm" className="text-[10px] font-bold uppercase h-9">
-                          <Edit3 className="mr-2 h-3.5 w-3.5" /> {isEditingLedger ? "Exit Edit" : "Edit Data"}
+                          <Edit3 className="mr-2 h-3.5 w-3.5" /> {isEditingLedger ? "Exit Edit" : "Edit Values"}
                         </Button>
                         <Button onClick={handleExport} variant="outline" size="sm" className="text-[10px] font-bold uppercase h-9">
-                          <Download className="mr-2 h-3.5 w-3.5" /> Export to Excel
+                          <Download className="mr-2 h-3.5 w-3.5" /> Export Catalog
                         </Button>
                       </div>
                     </CardHeader>
-                    <CardContent className="p-0">
+                    <CardContent className="p-0 overflow-x-auto">
                       <Table>
                         <TableHeader className="bg-muted/30">
                           <TableRow>
-                            <TableHead className="text-[10px] uppercase font-bold tracking-widest">Line Item / Account</TableHead>
-                            <TableHead className="text-[10px] uppercase font-bold tracking-widest text-center">Year</TableHead>
-                            <TableHead className="text-right text-[10px] uppercase font-bold tracking-widest">Value</TableHead>
-                            {isEditingLedger && <TableHead className="w-[100px]"></TableHead>}
+                            <TableHead className="text-[10px] uppercase font-bold tracking-widest min-w-[250px]">Line Item / Account</TableHead>
+                            {pivotData.years.map(year => (
+                              <TableHead key={year} className="text-center text-[10px] uppercase font-bold tracking-widest min-w-[150px]">{year}</TableHead>
+                            ))}
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {currentStatementData.map((item: any) => (
-                            <TableRow key={item.id} className={cn(item.isVerified ? "bg-green-50/20" : "")}>
-                              <TableCell className="font-medium">
-                                {isEditingLedger ? <Input defaultValue={item.lineItem} className="h-8 text-xs" id={`li-${item.id}`} /> : item.lineItem}
+                          {pivotData.rows.map((row: any, idx: number) => (
+                            <TableRow key={idx}>
+                              <TableCell className="font-medium text-slate-700">
+                                {row.lineItem}
                               </TableCell>
-                              <TableCell className="text-center">
-                                <Badge variant="secondary" className="text-[10px] font-bold">{item.year}</Badge>
-                              </TableCell>
-                              <TableCell className="text-right font-mono font-bold text-primary">
-                                {isEditingLedger ? <Input type="number" defaultValue={item.value} className="h-8 text-xs text-right w-32 ml-auto" id={`val-${item.id}`} /> : item.value.toLocaleString(undefined, { style: 'currency', currency: item.currency })}
-                              </TableCell>
-                              {isEditingLedger && (
-                                <TableCell className="text-right">
-                                  <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => {
-                                    const li = (document.getElementById(`li-${item.id}`) as HTMLInputElement).value;
-                                    const val = parseFloat((document.getElementById(`val-${item.id}`) as HTMLInputElement).value);
-                                    handleSaveEdit(item.id, val, li);
-                                  }}>
-                                    {savingId === item.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5 text-primary" />}
-                                  </Button>
-                                </TableCell>
-                              )}
+                              {pivotData.years.map(year => {
+                                const entry = row[year];
+                                return (
+                                  <TableCell key={year} className="text-center">
+                                    {isEditingLedger && entry ? (
+                                      <div className="flex items-center gap-1 justify-center">
+                                        <Input 
+                                          type="number" 
+                                          defaultValue={entry.value} 
+                                          className="h-8 text-xs text-center w-28 font-bold text-primary" 
+                                          id={`val-${entry.id}`} 
+                                        />
+                                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => {
+                                          const val = parseFloat((document.getElementById(`val-${entry.id}`) as HTMLInputElement).value);
+                                          handleSaveEdit(entry.id, val, row.lineItem);
+                                        }}>
+                                          {savingId === entry.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3 text-primary" />}
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <span className={cn("font-bold text-sm", entry ? "text-primary" : "text-muted-foreground italic")}>
+                                        {entry ? entry.value.toLocaleString(undefined, { style: 'currency', currency: entry.currency }) : "-"}
+                                      </span>
+                                    )}
+                                  </TableCell>
+                                );
+                              })}
                             </TableRow>
                           ))}
                         </TableBody>
@@ -463,7 +488,7 @@ export default function ProjectDetail() {
                     <CardFooter className="bg-muted/5 py-3 border-t">
                       <div className="flex items-center gap-2 text-[10px] font-bold text-green-600 uppercase tracking-widest">
                         <CheckCircle2 className="h-3 w-3" />
-                        Forensic Integrity Verified
+                        Multi-Year Comparison Integrity Verified
                       </div>
                     </CardFooter>
                   </Card>
