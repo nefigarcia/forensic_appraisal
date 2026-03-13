@@ -97,6 +97,41 @@ export default function ProjectDetail() {
     loadData();
   }, [loadData]);
 
+  // Memoized grouped data to prevent Rules of Hooks errors with conditional returns
+  const groupedData = React.useMemo(() => {
+    if (!caseData?.financialData) return {};
+    return caseData.financialData.reduce((acc: any, item: any) => {
+      const key = item.statementType;
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(item);
+      return acc;
+    }, {});
+  }, [caseData]);
+
+  const statementTypes = React.useMemo(() => {
+    return Object.keys(groupedData).sort();
+  }, [groupedData]);
+
+  // Pivot Logic for the Table (Memoized)
+  const pivotData = React.useMemo(() => {
+    if (!activeStatementType || !groupedData[activeStatementType]) return { years: [], rows: [] };
+    
+    const items = groupedData[activeStatementType];
+    const years = Array.from(new Set(items.map((i: any) => i.year))).sort() as string[];
+    const lineItemNames = Array.from(new Set(items.map((i: any) => i.lineItem))).sort() as string[];
+    
+    const rows = lineItemNames.map(name => {
+      const row: any = { lineItem: name };
+      years.forEach(year => {
+        const found = items.find((i: any) => i.lineItem === name && i.year === year);
+        row[year] = found; // Store object to access ID and verified status
+      });
+      return row;
+    });
+
+    return { years, rows };
+  }, [activeStatementType, groupedData]);
+
   const handleExtraction = async () => {
     if (!caseData?.documents || caseData.documents.length === 0) {
       toast({ title: "No Documents", description: "Please upload a document to the binder first.", variant: "destructive" })
@@ -207,36 +242,6 @@ export default function ProjectDetail() {
 
   if (loading) return <div className="flex items-center justify-center min-h-screen"><Loader2 className="animate-spin text-primary h-8 w-8" /></div>;
   if (!caseData) return <div className="p-8 text-center">Case not found.</div>;
-
-  // Group by Statement Type only
-  const groupedData = caseData.financialData.reduce((acc: any, item: any) => {
-    const key = item.statementType;
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(item);
-    return acc;
-  }, {});
-
-  const statementTypes = Object.keys(groupedData).sort();
-
-  // Pivot Logic for the Table
-  const pivotData = React.useMemo(() => {
-    if (!activeStatementType || !groupedData[activeStatementType]) return { years: [], rows: [] };
-    
-    const items = groupedData[activeStatementType];
-    const years = Array.from(new Set(items.map((i: any) => i.year))).sort() as string[];
-    const lineItemNames = Array.from(new Set(items.map((i: any) => i.lineItem))).sort() as string[];
-    
-    const rows = lineItemNames.map(name => {
-      const row: any = { lineItem: name };
-      years.forEach(year => {
-        const found = items.find((i: any) => i.lineItem === name && i.year === year);
-        row[year] = found; // Store object to access ID and verified status
-      });
-      return row;
-    });
-
-    return { years, rows };
-  }, [activeStatementType, groupedData]);
 
   return (
     <SidebarProvider>
@@ -407,7 +412,7 @@ export default function ProjectDetail() {
                               <FileSpreadsheet className={cn("h-4 w-4", activeStatementType === type ? "text-primary" : "text-muted-foreground")} />
                               <div className="flex flex-col">
                                 <span className={cn("text-[11px] font-bold", activeStatementType === type ? "text-primary" : "text-muted-foreground")}>{type}</span>
-                                <span className="text-[9px] font-bold text-muted-foreground opacity-60 uppercase">Multiple Years Detected</span>
+                                <span className="text-[9px] font-bold text-muted-foreground opacity-60 uppercase">Multi-Year Audit View</span>
                               </div>
                             </div>
                             {isAllVerified && <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
@@ -466,15 +471,18 @@ export default function ProjectDetail() {
                                           id={`val-${entry.id}`} 
                                         />
                                         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => {
-                                          const val = parseFloat((document.getElementById(`val-${entry.id}`) as HTMLInputElement).value);
-                                          handleSaveEdit(entry.id, val, row.lineItem);
+                                          const el = document.getElementById(`val-${entry.id}`) as HTMLInputElement;
+                                          if (el) {
+                                            const val = parseFloat(el.value);
+                                            handleSaveEdit(entry.id, val, row.lineItem);
+                                          }
                                         }}>
                                           {savingId === entry.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3 text-primary" />}
                                         </Button>
                                       </div>
                                     ) : (
                                       <span className={cn("font-bold text-sm", entry ? "text-primary" : "text-muted-foreground italic")}>
-                                        {entry ? entry.value.toLocaleString(undefined, { style: 'currency', currency: entry.currency }) : "-"}
+                                        {entry ? entry.value.toLocaleString(undefined, { style: 'currency', currency: entry.currency || 'USD' }) : "-"}
                                       </span>
                                     )}
                                   </TableCell>
