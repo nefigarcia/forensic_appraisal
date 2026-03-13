@@ -14,11 +14,11 @@ Enterprise-grade AI platform for forensic accountants and valuation specialists.
 
 ### 3. Document Custody Binder (Module 3)
 - **Feature**: Chain-of-custody tracking.
-- **Workflow**: Inside a Case, use **Upload Source** to attach evidence. The metadata is persisted to the `Document` table, ensuring every file is accounted for in audit logs.
+- **Workflow**: Inside a Case, use **Upload Source** to attach evidence. Files are stored in **AWS S3** and metadata (including the S3 key) is persisted to the `Document` table.
 
 ### 4. AI Extraction & Forensic Ledger (Modules 4 & 5)
 - **Feature**: Automated financial normalization.
-- **Workflow**: Click **Run Extraction** on a document. Genkit AI parses the PDF and maps values to a structured format. These are saved as `FinancialValue` records and displayed in the **Forensic Ledger** tab.
+- **Workflow**: Click **Run Extraction** on a document. Genkit AI pulls the real file from S3, parses the data, and maps values to a structured format. These are saved as `FinancialValue` records and displayed in the **Forensic Ledger**. You can manually edit and verify these values.
 
 ### 5. Industry Classification AI (Module 6)
 - **Feature**: Automatic NAICS/SIC profiling.
@@ -32,15 +32,27 @@ Enterprise-grade AI platform for forensic accountants and valuation specialists.
 - **Feature**: Natural language archive search.
 - **Workflow**: Use the **Discovery Search** page to find matters or source documents across your firm's historical archive.
 
-## 🛠 Tech Stack
+## 🛠 Multi-Tenant OAuth Setup (Microsoft)
+To enable real SharePoint/OneDrive connections for your clients:
+
+1. **Azure Portal**:
+   - Register a new app named "ValuVault AI".
+   - **Supported account types**: Select **"Multiple Entra ID tenants"**.
+   - **Redirect URI**: Web -> `http://localhost:9002/api/connect/microsoft/callback`.
+2. **Permissions**:
+   - Add `Files.Read.All`, `Sites.Read.All`, `User.Read`, and `offline_access`.
+3. **Environment**:
+   - Add `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` to your `.env`.
+
+## 📦 Tech Stack
 - **Framework**: Next.js 15 (App Router)
 - **Database**: MySQL (via Prisma ORM)
+- **Storage**: AWS S3 (Forensic Binder)
 - **AI Engine**: Genkit (Google Gemini 2.5 Flash)
 - **Styling**: Tailwind CSS + ShadCN UI
 - **Auth**: Custom JWT-based Session Management
 
 ## 📝 Setup
-1. Ensure `DATABASE_URL` is set in `.env`.
+1. Ensure `DATABASE_URL`, `AWS_S3_BUCKET_NAME`, and Microsoft credentials are set in `.env`.
 2. Run `npx prisma db push` to initialize tables.
-3. Run `npx prisma generate` for type safety.
-4. Start dev server: `npm run dev`.
+3. Run `npm run dev`.
