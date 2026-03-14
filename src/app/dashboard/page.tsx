@@ -147,9 +147,11 @@ export default async function Dashboard() {
                 </div>
 
                 <div className="pt-4 border-t border-white/10">
-                  <Button className="w-full bg-white text-primary hover:bg-white/90 font-bold uppercase text-xs tracking-widest">
-                    Open Knowledge Base
-                  </Button>
+                  <Link href="/knowledge-base">
+                    <Button className="w-full bg-white text-primary hover:bg-white/90 font-bold uppercase text-xs tracking-widest">
+                      Open Knowledge Base
+                    </Button>
+                  </Link>
                 </div>
               </CardContent>
             </Card>
