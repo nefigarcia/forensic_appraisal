@@ -1,4 +1,3 @@
-
 'use server';
 
 import { prisma } from "@/lib/prisma";
@@ -58,6 +57,7 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
   });
 
   if (result.extractedData && result.extractedData.length > 0) {
+    // 1. Save extraction results
     await prisma.financialValue.createMany({
       data: result.extractedData.map((item) => ({
         caseId,
@@ -68,6 +68,12 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
         currency: item.currency || "USD",
         isVerified: false
       })),
+    });
+
+    // 2. Update document status to EXTRACTED upon success
+    await prisma.document.update({
+      where: { id: doc.id },
+      data: { status: "EXTRACTED" }
     });
   }
 

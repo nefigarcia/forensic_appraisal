@@ -405,10 +405,10 @@ export default function ProjectDetail() {
                               variant='outline' 
                               className={cn(
                                 "text-[10px] uppercase font-bold tracking-widest",
-                                (doc.status === "EXTRACTED" || doc.status === "VERIFIED") ? "bg-emerald-50 text-emerald-700 border-emerald-200" : ""
+                                doc.status === "EXTRACTED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-blue-50 text-blue-700 border-blue-200"
                               )}
                             >
-                              {(doc.status === "VERIFIED" || doc.status === "EXTRACTED") ? "EXTRACTED" : doc.status}
+                              {doc.status || "VERIFIED"}
                             </Badge>
                           </div>
                         ))}

@@ -90,7 +90,7 @@ export async function addDocument(caseId: string, formData: FormData) {
         type: type || file.type,
         size: fileSize,
         s3Key: fileKey, 
-        status: "EXTRACTED", // Default status as requested
+        status: "VERIFIED", // Status on upload
       },
     });
 
