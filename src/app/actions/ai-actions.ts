@@ -4,13 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth-utils";
 import { extractFinancialData } from "@/ai/flows/ai-financial-statement-extraction-flow";
 import { aiIndustryCodeSuggestion } from "@/ai/flows/ai-industry-code-suggestion-flow";
+import { queryBinder } from "@/ai/flows/binder-query-flow";
 import { revalidatePath } from "next/cache";
 import { s3Client, BUCKET_NAME } from "@/lib/s3-client";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 
-/**
- * Helper to convert S3 readable stream to a Buffer
- */
 async function streamToBuffer(stream: any): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: any[] = [];
@@ -43,7 +41,6 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
     const buffer = await streamToBuffer(response.Body);
     const base64 = buffer.toString('base64');
     
-    // Improved MIME type detection to prevent "no pages" error in images
     const extension = doc.s3Key.split('.').pop()?.toLowerCase() || '';
     let mimeType = 'application/pdf';
     
@@ -64,7 +61,6 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
   });
 
   if (result.extractedData && result.extractedData.length > 0) {
-    // 1. Save extraction results
     await prisma.financialValue.createMany({
       data: result.extractedData.map((item) => ({
         caseId,
@@ -77,7 +73,6 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
       })),
     });
 
-    // 2. Transition status from VERIFIED to EXTRACTED upon successful AI analysis
     await prisma.document.update({
       where: { id: doc.id },
       data: { status: "EXTRACTED" }
@@ -111,6 +106,25 @@ export async function approveFinancialValues(caseId: string, statementType: stri
   });
 
   revalidatePath(`/projects/${caseId}`);
+}
+
+export async function askBinder(caseId: string, query: string) {
+  const session = await getSession();
+  if (!session) throw new Error("Unauthorized");
+
+  // For a robust system, we would fetch OCR text from S3 or DB
+  // For this prototype, we'll use the extracted financial items as context
+  const financialData = await prisma.financialValue.findMany({
+    where: { caseId },
+    take: 50
+  });
+
+  const contextData = [{
+    documentName: "Consolidated Forensic Ledger",
+    extractedText: financialData.map(f => `${f.year} ${f.statementType}: ${f.lineItem} = ${f.value}`).join('\n')
+  }];
+
+  return await queryBinder({ query, contextData });
 }
 
 export async function runIndustryAnalysis(caseId: string, description: string) {

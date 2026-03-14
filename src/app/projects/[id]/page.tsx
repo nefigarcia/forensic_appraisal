@@ -22,13 +22,17 @@ import {
   Download,
   FileSpreadsheet,
   Edit3,
-  Database
+  Search,
+  Sparkles,
+  ArrowUpRight,
+  ArrowDownRight,
+  Send
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { getCaseDetails } from "@/app/actions/cases"
 import { addDocument } from "@/app/actions/documents"
-import { runFinancialExtraction, runIndustryAnalysis, updateFinancialValue, approveFinancialValues } from "@/app/actions/ai-actions"
+import { runFinancialExtraction, runIndustryAnalysis, updateFinancialValue, approveFinancialValues, askBinder } from "@/app/actions/ai-actions"
 import { getExternalConnections } from "@/app/actions/connectors"
 import { toast } from "@/hooks/use-toast"
 import {
@@ -75,6 +79,11 @@ export default function ProjectDetail() {
   const [isEditingLedger, setIsEditingLedger] = React.useState(false)
   const [activeStatementType, setActiveStatementType] = React.useState<string | null>(null)
   const [savingId, setSavingId] = React.useState<string | null>(null)
+
+  // Chat State
+  const [chatQuery, setChatQuery] = React.useState("")
+  const [chatAnswer, setChatAnswer] = React.useState<string | null>(null)
+  const [isChatting, setIsChatting] = React.useState(false)
 
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
@@ -142,9 +151,19 @@ export default function ProjectDetail() {
     
     const rows = lineItemNames.map(name => {
       const row: any = { lineItem: name };
-      years.forEach(year => {
+      years.forEach((year, idx) => {
         const found = items.find((i: any) => i.lineItem === name && i.year === year);
         row[year] = found; 
+        
+        // Variance Detection
+        if (idx > 0) {
+          const prevYear = years[idx - 1];
+          const prevFound = items.find((i: any) => i.lineItem === name && i.year === prevYear);
+          if (found && prevFound && prevFound.value !== 0) {
+            const pctChange = ((found.value - prevFound.value) / Math.abs(prevFound.value)) * 100;
+            row[`${year}_var`] = pctChange;
+          }
+        }
       });
       return row;
     });
@@ -167,6 +186,19 @@ export default function ProjectDetail() {
       toast({ title: "Extraction Error", description: error.message || "Failed to process document content.", variant: "destructive" })
     } finally {
       setIsExtracting(false)
+    }
+  }
+
+  const handleBinderChat = async () => {
+    if (!chatQuery) return;
+    setIsChatting(true);
+    try {
+      const res = await askBinder(id as string, chatQuery);
+      setChatAnswer(res.answer);
+    } catch (error) {
+      toast({ title: "Discovery Error", variant: "destructive" });
+    } finally {
+      setIsChatting(false);
     }
   }
 
@@ -378,6 +410,10 @@ export default function ProjectDetail() {
                 <Globe className="mr-2 h-4 w-4" />
                 Benchmarks
               </TabsTrigger>
+              <TabsTrigger value="discovery" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <Search className="mr-2 h-4 w-4" />
+                Discovery Chat
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="documents">
@@ -433,7 +469,13 @@ export default function ProjectDetail() {
             <TabsContent value="analysis">
               <div className="space-y-2 mb-6">
                 <h2 className="text-2xl font-black text-primary tracking-tight">Forensic Financial Ledger</h2>
-                <p className="text-sm text-muted-foreground font-medium">AI normalization with multi-year comparison view.</p>
+                <div className="flex items-center gap-4">
+                  <p className="text-sm text-muted-foreground font-medium">AI normalization with multi-year comparison view.</p>
+                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-50 text-orange-700 border border-orange-100 text-[9px] font-bold uppercase tracking-widest">
+                    <Sparkles className="h-3 w-3 fill-orange-500" />
+                    Variance Radar Active
+                  </div>
+                </div>
               </div>
 
               <div className="grid gap-6 lg:grid-cols-12 items-start">
@@ -504,10 +546,13 @@ export default function ProjectDetail() {
                               <TableCell className="font-medium text-slate-700">
                                 {row.lineItem}
                               </TableCell>
-                              {pivotData.years.map(year => {
+                              {pivotData.years.map((year, yIdx) => {
                                 const entry = row[year];
+                                const variance = row[`${year}_var`];
+                                const isFlagged = variance && Math.abs(variance) > 50;
+                                
                                 return (
-                                  <TableCell key={year} className="text-center">
+                                  <TableCell key={year} className={cn("text-center", isFlagged ? "bg-orange-50/50" : "")}>
                                     {isEditingLedger && entry ? (
                                       <div className="flex items-center gap-1 justify-center">
                                         <Input 
@@ -527,9 +572,20 @@ export default function ProjectDetail() {
                                         </Button>
                                       </div>
                                     ) : (
-                                      <span className={cn("font-bold text-sm", entry ? "text-primary" : "text-muted-foreground italic")}>
-                                        {entry ? entry.value.toLocaleString(undefined, { style: 'currency', currency: entry.currency || 'USD' }) : "-"}
-                                      </span>
+                                      <div className="flex flex-col items-center">
+                                        <span className={cn("font-bold text-sm", entry ? "text-primary" : "text-muted-foreground italic")}>
+                                          {entry ? entry.value.toLocaleString(undefined, { style: 'currency', currency: entry.currency || 'USD' }) : "-"}
+                                        </span>
+                                        {variance !== undefined && (
+                                          <div className={cn(
+                                            "flex items-center gap-0.5 text-[9px] font-black uppercase mt-1",
+                                            variance > 0 ? "text-emerald-600" : "text-rose-600"
+                                          )}>
+                                            {variance > 0 ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
+                                            {Math.abs(variance).toFixed(1)}%
+                                          </div>
+                                        )}
+                                      </div>
                                     )}
                                   </TableCell>
                                 );
@@ -579,6 +635,74 @@ export default function ProjectDetail() {
                     )}
                   </CardContent>
                 </Card>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="discovery">
+              <div className="grid gap-6 lg:grid-cols-12">
+                <Card className="lg:col-span-8 border-none shadow-sm bg-white overflow-hidden flex flex-col min-h-[500px]">
+                  <CardHeader className="bg-primary text-white">
+                    <CardTitle className="text-lg font-bold font-headline flex items-center gap-2">
+                      <Sparkles className="h-5 w-5 fill-accent text-accent" />
+                      Binder Intelligence Chat
+                    </CardTitle>
+                    <CardDescription className="text-white/60">Ask questions about your uploaded documents and forensic ledger.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex-1 p-6 flex flex-col">
+                    <div className="flex-1 space-y-6 overflow-y-auto mb-6">
+                      {chatAnswer ? (
+                        <div className="space-y-4">
+                          <div className="bg-muted p-4 rounded-2xl rounded-tl-none self-start max-w-[80%] border">
+                            <p className="text-sm font-medium leading-relaxed">{chatAnswer}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center py-20 opacity-30">
+                          <Search className="h-12 w-12 mx-auto mb-4" />
+                          <p className="text-sm font-bold uppercase tracking-widest">Execute Discovery Query</p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="relative mt-auto">
+                      <Input 
+                        value={chatQuery}
+                        onChange={(e) => setChatQuery(e.target.value)}
+                        placeholder="e.g., 'Summarize the 2022 revenue trends'..." 
+                        className="pr-20 h-14 bg-muted/30 border-none shadow-inner"
+                        onKeyDown={(e) => e.key === 'Enter' && handleBinderChat()}
+                      />
+                      <Button 
+                        onClick={handleBinderChat}
+                        disabled={isChatting || !chatQuery}
+                        className="absolute right-1.5 top-1.5 h-11 bg-primary px-6"
+                      >
+                        {isChatting ? <Loader2 className="animate-spin h-4 w-4" /> : <Send className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="lg:col-span-4 space-y-6">
+                  <Card className="border-none shadow-sm bg-accent text-white overflow-hidden">
+                    <CardHeader><CardTitle className="text-sm font-bold uppercase tracking-widest">Sample Queries</CardTitle></CardHeader>
+                    <CardContent className="space-y-3">
+                      {[
+                        "What is the largest expense in 2021?",
+                        "Did EBITDA increase YOY?",
+                        "Are there any missing statements?",
+                        "Summarize the industry classification."
+                      ].map(q => (
+                        <button 
+                          key={q} 
+                          onClick={() => setChatQuery(q)}
+                          className="w-full text-left p-3 rounded-lg bg-white/10 hover:bg-white/20 transition-colors text-xs font-bold border border-white/10"
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </div>
               </div>
             </TabsContent>
           </Tabs>
