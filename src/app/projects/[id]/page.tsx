@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from "react"
@@ -26,7 +27,9 @@ import {
   Sparkles,
   ArrowUpRight,
   ArrowDownRight,
-  Send
+  Send,
+  AlertCircle,
+  FileSearch
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
@@ -64,6 +67,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+import { Progress } from "@/components/ui/progress"
 
 export default function ProjectDetail() {
   const { id } = useParams()
@@ -126,20 +130,33 @@ export default function ProjectDetail() {
     return Object.keys(groupedData).sort();
   }, [groupedData]);
 
-  const statementYearRanges = React.useMemo(() => {
-    const ranges: Record<string, string> = {};
+  const statementMetadata = React.useMemo(() => {
+    const meta: Record<string, { yearRange: string; progress: number; total: number; verified: number; confidence: 'high' | 'medium' | 'low' }> = {};
+    
     statementTypes.forEach(type => {
-      const years = groupedData[type]
+      const items = groupedData[type];
+      const years = items
         .map((i: any) => parseInt(i.year))
         .filter((y: any) => !isNaN(y))
         .sort((a: number, b: number) => a - b);
+      
+      const total = items.length;
+      const verified = items.filter((i: any) => i.isVerified).length;
+      const progress = total > 0 ? (verified / total) * 100 : 0;
+      
+      // Heuristic for prototype confidence
+      const confidence = progress === 100 ? 'high' : total > 20 ? 'medium' : 'low';
+
+      let range = "N/A";
       if (years.length > 0) {
         const min = years[0];
         const max = years[years.length - 1];
-        ranges[type] = min === max ? `${min}` : `${min}-${max}`;
+        range = min === max ? `${min}` : `${min}-${max}`;
       }
+
+      meta[type] = { yearRange: range, progress, total, verified, confidence };
     });
-    return ranges;
+    return meta;
   }, [statementTypes, groupedData]);
 
   const pivotData = React.useMemo(() => {
@@ -440,7 +457,7 @@ export default function ProjectDetail() {
                             <Badge 
                               variant='outline' 
                               className={cn(
-                                "text-[10px] uppercase font-bold tracking-widest",
+                                "text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-full",
                                 doc.status === "EXTRACTED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-blue-50 text-blue-700 border-blue-200"
                               )}
                             >
@@ -481,35 +498,79 @@ export default function ProjectDetail() {
               <div className="grid gap-6 lg:grid-cols-12 items-start">
                 <Card className="lg:col-span-3 border-none shadow-sm overflow-hidden bg-white">
                   <CardHeader className="bg-muted/30 border-b py-4">
-                    <CardTitle className="text-xs font-bold uppercase tracking-widest">Reports Detected</CardTitle>
+                    <CardTitle className="text-xs font-bold uppercase tracking-widest">Reports Catalog</CardTitle>
                   </CardHeader>
                   <CardContent className="p-0">
                     <div className="divide-y">
                       {statementTypes.map((type) => {
-                        const isAllVerified = groupedData[type].every((i: any) => i.isVerified);
-                        const range = statementYearRanges[type];
+                        const meta = statementMetadata[type];
+                        const isActive = activeStatementType === type;
+                        
                         return (
                           <button 
                             key={type} 
                             onClick={() => setActiveStatementType(type)} 
-                            className={cn("w-full flex items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors", activeStatementType === type ? "bg-primary/5 border-l-4 border-primary" : "")}
+                            className={cn(
+                              "w-full p-4 text-left transition-all relative group",
+                              isActive ? "bg-primary/5 border-l-4 border-primary" : "hover:bg-muted/50"
+                            )}
                           >
-                            <div className="flex items-center gap-3">
-                              <FileSpreadsheet className={cn("h-4 w-4", activeStatementType === type ? "text-primary" : "text-muted-foreground")} />
-                              <div className="flex flex-col">
-                                <span className={cn("text-[11px] font-bold", activeStatementType === type ? "text-primary" : "text-muted-foreground")}>
-                                  {type} {range ? `(${range})` : ''}
+                            <div className="flex items-start justify-between mb-2">
+                              <div className="flex items-center gap-3">
+                                <FileSpreadsheet className={cn("h-4 w-4", isActive ? "text-primary" : "text-muted-foreground")} />
+                                <span className={cn("text-[11px] font-bold", isActive ? "text-primary" : "text-slate-700")}>
+                                  {type}
                                 </span>
-                                <span className="text-[9px] font-bold text-muted-foreground opacity-60 uppercase">Multi-Year Audit View</span>
+                              </div>
+                              <div className={cn(
+                                "h-2 w-2 rounded-full",
+                                meta.confidence === 'high' ? "bg-emerald-500" : meta.confidence === 'medium' ? "bg-amber-500" : "bg-rose-500"
+                              )} title={`AI Confidence: ${meta.confidence}`} />
+                            </div>
+
+                            <div className="flex items-center justify-between mb-3 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">
+                              <span>Range: {meta.yearRange}</span>
+                              <span className={cn(meta.progress === 100 ? "text-emerald-600" : "")}>
+                                {meta.verified} / {meta.total} Verified
+                              </span>
+                            </div>
+
+                            <div className="space-y-1">
+                              <Progress value={meta.progress} className="h-1 bg-muted" />
+                              <div className="flex justify-between items-center text-[8px] font-black uppercase tracking-tighter opacity-40">
+                                <span>Audit Progress</span>
+                                <span>{Math.round(meta.progress)}%</span>
                               </div>
                             </div>
-                            {isAllVerified && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
                           </button>
                         );
                       })}
-                      {statementTypes.length === 0 && <div className="p-8 text-center text-xs text-muted-foreground">Run extraction to detect statements</div>}
+                      {statementTypes.length === 0 && (
+                        <div className="p-12 text-center">
+                          <FileSearch className="h-8 w-8 mx-auto mb-4 text-muted-foreground/20" />
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                            No Statements Detected
+                          </p>
+                          <p className="text-[9px] text-muted-foreground mt-2">
+                            Upload evidence to begin extraction
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </CardContent>
+                  <CardFooter className="bg-muted/10 p-4 border-t">
+                    <div className="space-y-2 w-full">
+                      <p className="text-[8px] font-bold uppercase text-muted-foreground tracking-widest mb-2">AI Integrity Keys</p>
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        <span className="text-[8px] font-medium text-muted-foreground uppercase">High Confidence (Verified PDF)</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                        <span className="text-[8px] font-medium text-muted-foreground uppercase">Manual Audit Required (Scan)</span>
+                      </div>
+                    </div>
+                  </CardFooter>
                 </Card>
 
                 <div className="lg:col-span-9 space-y-6">
