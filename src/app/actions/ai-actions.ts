@@ -43,7 +43,14 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
     const buffer = await streamToBuffer(response.Body);
     const base64 = buffer.toString('base64');
     
-    const mimeType = doc.type?.toLowerCase().includes('image') ? 'image/jpeg' : 'application/pdf';
+    // Improved MIME type detection to prevent "no pages" error in images
+    const extension = doc.s3Key.split('.').pop()?.toLowerCase() || '';
+    let mimeType = 'application/pdf';
+    
+    if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(extension)) {
+      mimeType = extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : `image/${extension}`;
+    }
+    
     documentDataUri = `data:${mimeType};base64,${base64}`;
   } catch (error) {
     console.error("S3 Retrieval Error:", error);
@@ -70,7 +77,7 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
       })),
     });
 
-    // 2. Update document status to EXTRACTED upon success
+    // 2. Transition status from VERIFIED to EXTRACTED upon successful AI analysis
     await prisma.document.update({
       where: { id: doc.id },
       data: { status: "EXTRACTED" }
