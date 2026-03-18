@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from "react"
@@ -29,7 +28,8 @@ import {
   ArrowDownRight,
   Send,
   AlertCircle,
-  FileSearch
+  FileSearch,
+  History
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
@@ -79,12 +79,10 @@ export default function ProjectDetail() {
   const [uploadOpen, setUploadOpen] = React.useState(false)
   const [availableConnectors, setAvailableConnectors] = React.useState<any[]>([])
   
-  // Ledger State
   const [isEditingLedger, setIsEditingLedger] = React.useState(false)
   const [activeStatementType, setActiveStatementType] = React.useState<string | null>(null)
   const [savingId, setSavingId] = React.useState<string | null>(null)
 
-  // Chat State
   const [chatQuery, setChatQuery] = React.useState("")
   const [chatAnswer, setChatAnswer] = React.useState<string | null>(null)
   const [isChatting, setIsChatting] = React.useState(false)
@@ -131,20 +129,16 @@ export default function ProjectDetail() {
   }, [groupedData]);
 
   const statementMetadata = React.useMemo(() => {
-    const meta: Record<string, { yearRange: string; progress: number; total: number; verified: number; confidence: 'high' | 'medium' | 'low' }> = {};
+    const meta: Record<string, { years: string[]; yearRange: string; progress: number; total: number; verified: number; confidence: 'high' | 'medium' | 'low' }> = {};
     
     statementTypes.forEach(type => {
       const items = groupedData[type];
-      const years = items
-        .map((i: any) => parseInt(i.year))
-        .filter((y: any) => !isNaN(y))
-        .sort((a: number, b: number) => a - b);
+      const years = Array.from(new Set(items.map((i: any) => i.year))).sort() as string[];
       
       const total = items.length;
       const verified = items.filter((i: any) => i.isVerified).length;
       const progress = total > 0 ? (verified / total) * 100 : 0;
       
-      // Heuristic for prototype confidence
       const confidence = progress === 100 ? 'high' : total > 20 ? 'medium' : 'low';
 
       let range = "N/A";
@@ -154,7 +148,7 @@ export default function ProjectDetail() {
         range = min === max ? `${min}` : `${min}-${max}`;
       }
 
-      meta[type] = { yearRange: range, progress, total, verified, confidence };
+      meta[type] = { years, yearRange: range, progress, total, verified, confidence };
     });
     return meta;
   }, [statementTypes, groupedData]);
@@ -172,7 +166,6 @@ export default function ProjectDetail() {
         const found = items.find((i: any) => i.lineItem === name && i.year === year);
         row[year] = found; 
         
-        // Variance Detection
         if (idx > 0) {
           const prevYear = years[idx - 1];
           const prevFound = items.find((i: any) => i.lineItem === name && i.year === prevYear);
@@ -263,7 +256,7 @@ export default function ProjectDetail() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast({ title: "Export Started", description: "Multi-year CSV file is downloading." });
+    toast({ title: "Export Started" });
   }
 
   const handleIndustryAnalysis = async () => {
@@ -297,7 +290,7 @@ export default function ProjectDetail() {
 
     try {
       await addDocument(id as string, formData)
-      toast({ title: "Document Added" })
+      toast({ title: "Document Added to Binder", description: "Initial status set to VERIFIED." })
       setUploadOpen(false)
       setSelectedFile(null)
       loadData()
@@ -348,7 +341,7 @@ export default function ProjectDetail() {
               <DialogContent className="sm:max-w-[550px]">
                 <DialogHeader>
                   <DialogTitle>Add Forensic Evidence</DialogTitle>
-                  <DialogDescription>Attach documents to the matter binder. If mirrored storage is connected, you can sync files to your firm's external cloud.</DialogDescription>
+                  <DialogDescription>Attach documents to the matter binder. Initial status will be VERIFIED.</DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleUpload} className="space-y-6 mt-4">
                   <div className="space-y-2">
@@ -403,7 +396,7 @@ export default function ProjectDetail() {
                   </div>
                   <DialogFooter>
                     <Button type="submit" disabled={isUploading || !selectedFile} className="w-full bg-primary font-bold uppercase text-xs h-11">
-                      {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Save & Synchronize"}
+                      {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Save to Binder"}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -439,7 +432,7 @@ export default function ProjectDetail() {
                   <Card className="border-none shadow-sm overflow-hidden bg-white">
                     <CardHeader className="border-b py-4">
                       <CardTitle className="text-lg font-bold font-headline">Source Evidence</CardTitle>
-                      <CardDescription className="text-xs">Secure document custody for matter audit</CardDescription>
+                      <CardDescription className="text-xs">Initial status: VERIFIED | Successful AI Run: EXTRACTED</CardDescription>
                     </CardHeader>
                     <CardContent className="p-0">
                       <div className="divide-y">
@@ -465,6 +458,9 @@ export default function ProjectDetail() {
                             </Badge>
                           </div>
                         ))}
+                        {caseData.documents.length === 0 && (
+                          <div className="p-12 text-center text-muted-foreground text-sm font-medium">Binder is empty. Upload evidence to begin.</div>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -473,9 +469,9 @@ export default function ProjectDetail() {
                   <Card className="bg-primary text-white border-none shadow-xl relative overflow-hidden">
                     <CardHeader><CardTitle className="text-sm font-bold uppercase tracking-widest">AI Extraction</CardTitle></CardHeader>
                     <CardContent className="space-y-4">
-                      <p className="text-xs opacity-80">Automatically extract financial data from your uploaded binder.</p>
+                      <p className="text-xs opacity-80">Transition matter files from VERIFIED to EXTRACTED status.</p>
                       <Button onClick={handleExtraction} disabled={isExtracting || caseData.documents.length === 0} className="w-full bg-accent hover:bg-accent/90 border-none font-bold uppercase text-[10px] tracking-widest h-11 shadow-lg">
-                        {isExtracting ? "Processing..." : "Run Extraction"}
+                        {isExtracting ? "Extracting..." : "Run Extraction"}
                       </Button>
                     </CardContent>
                   </Card>
