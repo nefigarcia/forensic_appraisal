@@ -29,13 +29,16 @@ import {
   Send,
   AlertCircle,
   FileSearch,
-  History
+  History,
+  FileBarChart,
+  Grid3X3,
+  ChevronRight
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { getCaseDetails } from "@/app/actions/cases"
 import { addDocument } from "@/app/actions/documents"
-import { runFinancialExtraction, runIndustryAnalysis, updateFinancialValue, approveFinancialValues, askBinder } from "@/app/actions/ai-actions"
+import { runFinancialExtraction, runIndustryAnalysis, updateFinancialValue, approveFinancialValues, askBinder, runTtmNormalization } from "@/app/actions/ai-actions"
 import { getExternalConnections } from "@/app/actions/connectors"
 import { toast } from "@/hooks/use-toast"
 import {
@@ -86,6 +89,9 @@ export default function ProjectDetail() {
   const [chatQuery, setChatQuery] = React.useState("")
   const [chatAnswer, setChatAnswer] = React.useState<string | null>(null)
   const [isChatting, setIsChatting] = React.useState(false)
+
+  const [isNormalizing, setIsNormalizing] = React.useState(false)
+  const [ttmReport, setTtmReport] = React.useState<any>(null)
 
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
@@ -199,6 +205,19 @@ export default function ProjectDetail() {
     }
   }
 
+  const handleTtmNormalization = async () => {
+    setIsNormalizing(true);
+    try {
+      const res = await runTtmNormalization(id as string);
+      setTtmReport(res);
+      toast({ title: "TTM Report Generated", description: "Universal accounting mapping complete." });
+    } catch (error: any) {
+      toast({ title: "Normalization Error", description: error.message, variant: "destructive" });
+    } finally {
+      setIsNormalizing(false);
+    }
+  }
+
   const handleBinderChat = async () => {
     if (!chatQuery) return;
     setIsChatting(true);
@@ -304,6 +323,8 @@ export default function ProjectDetail() {
   if (loading) return <div className="flex items-center justify-center min-h-screen"><Loader2 className="animate-spin text-primary h-8 w-8" /></div>;
   if (!caseData) return <div className="p-8 text-center">Case not found.</div>;
 
+  const ttmYears = ttmReport ? Array.from(new Set(ttmReport.standardizedReport.flatMap((c: any) => c.items.flatMap((i: any) => Object.keys(i.valuesByYear))))).sort() : [];
+
   return (
     <SidebarProvider>
       <AppSidebar />
@@ -407,7 +428,7 @@ export default function ProjectDetail() {
 
         <main className="flex-1 p-8 bg-background/30 max-w-7xl mx-auto w-full">
           <Tabs defaultValue="analysis" className="space-y-6">
-            <TabsList className="bg-white/80 border w-full justify-start p-1 h-12 shadow-sm rounded-xl">
+            <TabsList className="bg-white/80 border w-full justify-start p-1 h-12 shadow-sm rounded-xl overflow-x-auto overflow-y-hidden">
               <TabsTrigger value="documents" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <FileText className="mr-2 h-4 w-4" />
                 Custody Binder
@@ -415,6 +436,10 @@ export default function ProjectDetail() {
               <TabsTrigger value="analysis" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <TableIcon className="mr-2 h-4 w-4" />
                 Forensic Ledger
+              </TabsTrigger>
+              <TabsTrigger value="ttm" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <FileBarChart className="mr-2 h-4 w-4" />
+                TTM Analysis
               </TabsTrigger>
               <TabsTrigger value="industry" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <Globe className="mr-2 h-4 w-4" />
@@ -660,6 +685,95 @@ export default function ProjectDetail() {
                     </CardFooter>
                   </Card>
                 </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="ttm">
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-black text-primary tracking-tight">Normalized TTM Report</h2>
+                    <p className="text-sm text-muted-foreground font-medium">Universal Trailing Twelve Months Analysis (Formatted for Valuation)</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <Button onClick={handleTtmNormalization} disabled={isNormalizing} className="bg-primary shadow-lg font-bold uppercase text-xs h-11 px-6">
+                      {isNormalizing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Grid3X3 className="mr-2 h-4 w-4" />}
+                      Generate Structured TTM
+                    </Button>
+                    <Button variant="outline" className="h-11 px-6 font-bold uppercase text-xs">
+                      <Download className="mr-2 h-4 w-4" />
+                      Excel Copy/Paste
+                    </Button>
+                  </div>
+                </div>
+
+                {!ttmReport ? (
+                  <Card className="border-2 border-dashed border-primary/20 bg-primary/5 py-24 text-center">
+                    <CardContent>
+                      <FileBarChart className="h-12 w-12 mx-auto mb-6 text-primary/40" />
+                      <h3 className="text-xl font-bold text-primary tracking-tight">Generate TTM Projection</h3>
+                      <p className="text-sm text-muted-foreground mt-2 max-w-sm mx-auto font-medium leading-relaxed">
+                        The AI will map your raw forensic ledger entries to universal accounting categories and calculate trailing projections.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="space-y-8">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <Card className="bg-white border-none shadow-sm">
+                        <CardHeader className="pb-2"><CardTitle className="text-[10px] uppercase font-bold text-muted-foreground">EBITDA (TTM)</CardTitle></CardHeader>
+                        <CardContent><p className="text-2xl font-black text-primary">${Object.values(ttmReport.summary.ebitda).pop()?.toLocaleString()}</p></CardContent>
+                      </Card>
+                      <Card className="bg-white border-none shadow-sm">
+                        <CardHeader className="pb-2"><CardTitle className="text-[10px] uppercase font-bold text-muted-foreground">Net Income (TTM)</CardTitle></CardHeader>
+                        <CardContent><p className="text-2xl font-black text-emerald-600">${Object.values(ttmReport.summary.netIncome).pop()?.toLocaleString()}</p></CardContent>
+                      </Card>
+                    </div>
+
+                    <Card className="border-none shadow-sm overflow-hidden bg-white">
+                      <Table>
+                        <TableHeader className="bg-muted/30">
+                          <TableRow>
+                            <TableHead className="text-[10px] uppercase font-bold tracking-widest min-w-[250px]">Standardized Item</TableHead>
+                            {ttmYears.map(year => (
+                              <TableHead key={year} className="text-center text-[10px] uppercase font-bold tracking-widest">{year}</TableHead>
+                            ))}
+                            <TableHead className="text-center text-[10px] uppercase font-bold tracking-widest bg-primary/5 text-primary">Trailing 12m</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {ttmReport.standardizedReport.map((cat: any) => (
+                            <React.Fragment key={cat.category}>
+                              <TableRow className="bg-muted/10">
+                                <TableCell colSpan={ttmYears.length + 2} className="text-[10px] font-black uppercase text-primary tracking-[0.2em] py-2 bg-primary/5">
+                                  {cat.category}
+                                </TableCell>
+                              </TableRow>
+                              {cat.items.map((item: any, iIdx: number) => (
+                                <TableRow key={iIdx} className="group hover:bg-muted/30">
+                                  <TableCell className="pl-8">
+                                    <div className="flex flex-col">
+                                      <span className="font-bold text-sm">{item.standardizedLabel}</span>
+                                      <span className="text-[9px] uppercase font-medium text-muted-foreground/60">{item.originalLabel}</span>
+                                    </div>
+                                  </TableCell>
+                                  {ttmYears.map(year => (
+                                    <TableCell key={year} className="text-center font-medium text-slate-700">
+                                      {item.valuesByYear[year]?.toLocaleString(undefined, { style: 'currency', currency: 'USD' }) || "-"}
+                                    </TableCell>
+                                  ))}
+                                  <TableCell className="text-center font-black text-primary bg-primary/5">
+                                    {item.ttmValue?.toLocaleString(undefined, { style: 'currency', currency: 'USD' }) || "-"}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </React.Fragment>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </Card>
+                  </div>
+                )}
               </div>
             </TabsContent>
 

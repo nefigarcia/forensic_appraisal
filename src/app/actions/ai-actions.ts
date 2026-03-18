@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth-utils";
 import { extractFinancialData } from "@/ai/flows/ai-financial-statement-extraction-flow";
 import { aiIndustryCodeSuggestion } from "@/ai/flows/ai-industry-code-suggestion-flow";
 import { queryBinder } from "@/ai/flows/binder-query-flow";
+import { normalizeTtmData } from "@/ai/flows/normalize-ttm-flow";
 import { revalidatePath } from "next/cache";
 import { s3Client, BUCKET_NAME } from "@/lib/s3-client";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
@@ -112,8 +113,6 @@ export async function askBinder(caseId: string, query: string) {
   const session = await getSession();
   if (!session) throw new Error("Unauthorized");
 
-  // For a robust system, we would fetch OCR text from S3 or DB
-  // For this prototype, we'll use the extracted financial items as context
   const financialData = await prisma.financialValue.findMany({
     where: { caseId },
     take: 50
@@ -151,6 +150,33 @@ export async function runIndustryAnalysis(caseId: string, description: string) {
       naicsCode: naics,
       sicCode: sic,
     },
+  });
+
+  revalidatePath(`/projects/${caseId}`);
+  return result;
+}
+
+export async function runTtmNormalization(caseId: string) {
+  const session = await getSession();
+  if (!session) throw new Error("Unauthorized");
+
+  const rawItems = await prisma.financialValue.findMany({
+    where: { caseId },
+    orderBy: { year: 'asc' }
+  });
+
+  if (rawItems.length === 0) {
+    throw new Error("No financial data found in the forensic ledger to normalize.");
+  }
+
+  const result = await normalizeTtmData({
+    rawItems: rawItems.map(item => ({
+      year: item.year,
+      statementType: item.statementType,
+      lineItem: item.lineItem,
+      value: item.value,
+      currency: item.currency,
+    }))
   });
 
   revalidatePath(`/projects/${caseId}`);
