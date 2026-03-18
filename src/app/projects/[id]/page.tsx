@@ -227,7 +227,8 @@ export default function ProjectDetail() {
   const handleCopyTtmToClipboard = () => {
     if (!ttmReport || !caseData) return;
     
-    let text = `Client: ${caseData.client}\tReport: Universal TTM Normalization Report\n\n`;
+    const reportTitle = activeStatementType || "Universal TTM";
+    let text = `Client: ${caseData.client}\tReport: ${reportTitle} Normalization Report\n\n`;
     const headers = ["Standardized Item", ...ttmYears, "Trailing 12m"];
     text += headers.join("\t") + "\n";
 
@@ -757,7 +758,9 @@ export default function ProjectDetail() {
                     <div className="bg-primary/5 p-8 rounded-2xl border text-center shadow-inner">
                       <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-primary/60 mb-2">Internal Valuation Workpaper</h3>
                       <h2 className="text-3xl font-black text-primary tracking-tight">{caseData.client}</h2>
-                      <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground mt-1">Universal TTM Normalization Report</p>
+                      <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground mt-1">
+                        {activeStatementType || "Universal TTM"} Normalization Report
+                      </p>
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
