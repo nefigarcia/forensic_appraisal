@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from "react"
@@ -72,6 +73,7 @@ import {
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { Progress } from "@/components/ui/progress"
+import * as XLSX from 'xlsx';
 
 export default function ProjectDetail() {
   const { id } = useParams()
@@ -250,6 +252,44 @@ export default function ProjectDetail() {
       toast({ title: "Copy Failed", variant: "destructive" });
     });
   }
+
+  const handleDownloadXlsx = () => {
+    if (!ttmReport || !caseData) return;
+    
+    const wb = XLSX.utils.book_new();
+    const dataRows = [];
+    
+    // Professional Header
+    dataRows.push(["CLIENT:", caseData.client]);
+    dataRows.push(["REPORT:", `${activeStatementType || "Universal TTM"} Normalization Report`]);
+    dataRows.push(["DATE:", format(new Date(), 'MMM d, yyyy')]);
+    dataRows.push([]); // Spacer
+    
+    // Table Headers
+    const headers = ["Standardized Item", ...ttmYears, "Trailing 12m"];
+    dataRows.push(headers);
+    
+    // Populate Data
+    ttmReport.standardizedReport.forEach((cat: any) => {
+      dataRows.push([cat.category.toUpperCase()]);
+      cat.items.forEach((item: any) => {
+        const row = [
+          item.standardizedLabel,
+          ...ttmYears.map(year => item.valuesByYear[year] || 0),
+          item.ttmValue || 0
+        ];
+        dataRows.push(row);
+      });
+    });
+    
+    const ws = XLSX.utils.aoa_to_sheet(dataRows);
+    XLSX.utils.book_append_sheet(wb, ws, "TTM Analysis");
+    
+    const filename = `${caseData.client.replace(/\s+/g, '_')}_TTM_${activeStatementType?.replace(/\s+/g, '_') || 'Report'}.xlsx`;
+    XLSX.writeFile(wb, filename);
+    
+    toast({ title: "Download Started", description: `File saved as ${filename}` });
+  };
 
   const handleBinderChat = async () => {
     if (!chatQuery) return;
@@ -732,13 +772,22 @@ export default function ProjectDetail() {
                       Generate Structured TTM
                     </Button>
                     <Button 
+                      onClick={handleDownloadXlsx}
+                      disabled={!ttmReport}
+                      variant="outline" 
+                      className="h-11 px-6 font-bold uppercase text-xs bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Download .xlsx
+                    </Button>
+                    <Button 
                       onClick={handleCopyTtmToClipboard}
                       disabled={!ttmReport}
                       variant="outline" 
                       className="h-11 px-6 font-bold uppercase text-xs"
                     >
                       <Copy className="mr-2 h-4 w-4" />
-                      Excel Copy/Paste
+                      Copy/Paste
                     </Button>
                   </div>
                 </div>
