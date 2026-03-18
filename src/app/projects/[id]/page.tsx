@@ -15,8 +15,6 @@ import {
   Globe,
   Calculator,
   UploadCloud,
-  FileCheck,
-  ImageIcon,
   CheckCircle2,
   Save,
   Download,
@@ -27,13 +25,15 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Send,
-  AlertCircle,
   FileSearch,
-  History,
   FileBarChart,
   Grid3X3,
-  ChevronRight,
-  Copy
+  Copy,
+  Info,
+  ShieldCheck,
+  Building2,
+  BarChart3,
+  Hash
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
@@ -258,36 +258,31 @@ export default function ProjectDetail() {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('TTM Analysis');
 
-    // Professional Header Setup
     worksheet.addRow(['VALUVAULT AI | PROFESSIONAL FORENSIC VALUATION REPORT']);
     worksheet.addRow(['CLIENT:', caseData.client]);
     worksheet.addRow(['REPORT:', `${activeStatementType || "Universal TTM"} Normalization Report`]);
     worksheet.addRow(['DATE:', format(new Date(), 'MMM d, yyyy')]);
-    worksheet.addRow([]); // Spacer Row
+    worksheet.addRow([]); 
 
-    // Main Header Row
     const headerRow = worksheet.addRow(["Standardized Item", ...ttmYears, "Trailing 12m"]);
     
-    // Style the Header Row
     headerRow.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 };
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: 'FF2563EB' } // Primary Blue
+        fgColor: { argb: 'FF2563EB' } 
       };
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
     });
 
-    // Populate Data with Styling
     ttmReport.standardizedReport.forEach((cat: any) => {
-      // Category Heading Row
       const catRow = worksheet.addRow([cat.category.toUpperCase()]);
       catRow.getCell(1).font = { bold: true, size: 11, color: { argb: 'FF1E40AF' } };
       catRow.fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: 'FFF3F4F6' } // Light Muted Gray
+        fgColor: { argb: 'FFF3F4F6' } 
       };
 
       cat.items.forEach((item: any) => {
@@ -298,35 +293,30 @@ export default function ProjectDetail() {
         ];
         const row = worksheet.addRow(rowData);
         
-        // Format Currency Cells
         for (let i = 2; i <= row.cellCount; i++) {
           row.getCell(i).numFmt = '"$"#,##0.00;[Red]("$"#,##0.00)';
           row.getCell(i).alignment = { horizontal: 'right' };
         }
         
-        // Style Trailing 12m Column
         const ttmCell = row.getCell(row.cellCount);
         ttmCell.font = { bold: true };
         ttmCell.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: 'FFEFF6FF' } // Very Light Blue
+          fgColor: { argb: 'FFEFF6FF' } 
         };
       });
-      worksheet.addRow([]); // Spacer after each category
+      worksheet.addRow([]); 
     });
 
-    // Column Sizing
     worksheet.columns = [
-      { width: 35 }, // Item label
-      ...ttmYears.map(() => ({ width: 15 })), // Years
-      { width: 20 } // TTM Column
+      { width: 35 }, 
+      ...ttmYears.map(() => ({ width: 15 })), 
+      { width: 20 } 
     ];
 
-    // Style the Report Title
     worksheet.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF1D4ED8' } };
     
-    // Generate and Trigger Download
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = window.URL.createObjectURL(blob);
@@ -404,9 +394,10 @@ export default function ProjectDetail() {
   const handleIndustryAnalysis = async () => {
     setIsAnalyzingIndustry(true)
     try {
-      await runIndustryAnalysis(id as string, "Forensic matter for: " + caseData?.name);
+      const description = `Industry classification for ${caseData.client}. Matter type: ${caseData.type}. Case Name: ${caseData.name}.`;
+      await runIndustryAnalysis(id as string, description);
       await loadData()
-      toast({ title: "Industry Profile Updated" })
+      toast({ title: "Industry Profile Generated" })
     } catch (error) {
       toast({ title: "Analysis Error", variant: "destructive" })
     } finally {
@@ -700,19 +691,6 @@ export default function ProjectDetail() {
                       )}
                     </div>
                   </CardContent>
-                  <CardFooter className="bg-muted/10 p-4 border-t">
-                    <div className="space-y-2 w-full">
-                      <p className="text-[8px] font-bold uppercase text-muted-foreground tracking-widest mb-2">AI Integrity Keys</p>
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                        <span className="text-[8px] font-medium text-muted-foreground uppercase">High Confidence (Verified PDF)</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                        <span className="text-[8px] font-medium text-muted-foreground uppercase">Manual Audit Required (Scan)</span>
-                      </div>
-                    </div>
-                  </CardFooter>
                 </Card>
 
                 <div className="lg:col-span-9 space-y-6">
@@ -749,7 +727,7 @@ export default function ProjectDetail() {
                               <TableCell className="font-medium text-slate-700">
                                 {row.lineItem}
                               </TableCell>
-                              {pivotData.years.map((year, yIdx) => {
+                              {pivotData.years.map((year) => {
                                 const entry = row[year];
                                 const variance = row[`${year}_var`];
                                 const isFlagged = variance && Math.abs(variance) > 50;
@@ -798,12 +776,6 @@ export default function ProjectDetail() {
                         </TableBody>
                       </Table>
                     </CardContent>
-                    <CardFooter className="bg-muted/5 py-3 border-t">
-                      <div className="flex items-center gap-2 text-[10px] font-bold text-emerald-600 uppercase tracking-widest">
-                        <CheckCircle2 className="h-3 w-3" />
-                        Multi-Year Comparison Integrity Verified
-                      </div>
-                    </CardFooter>
                   </Card>
                 </div>
               </div>
@@ -921,34 +893,123 @@ export default function ProjectDetail() {
             </TabsContent>
 
             <TabsContent value="industry">
-              <div className="grid gap-6 lg:grid-cols-2">
-                <Card className="border-none shadow-sm bg-white">
-                  <CardHeader className="border-b py-6"><CardTitle className="text-lg font-bold font-headline">Classification Profiling</CardTitle></CardHeader>
-                  <CardContent className="p-8">
-                    {!caseData.industry ? (
-                      <div className="text-center py-12">
-                        <Button onClick={handleIndustryAnalysis} disabled={isAnalyzingIndustry} className="bg-accent font-bold uppercase text-xs">
-                          {isAnalyzingIndustry ? <Loader2 className="mr-2 animate-spin" /> : "Suggest Industry Codes"}
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="space-y-8">
-                        <div className="p-8 bg-primary/5 rounded-2xl border">
-                          <label className="text-[10px] font-bold uppercase text-primary tracking-widest block mb-2">Primary Classification</label>
-                          <p className="text-2xl font-black text-primary">{caseData.industry.suggestedIndustry}</p>
-                        </div>
-                        <div className="grid gap-4">
-                          <div className="flex items-center justify-between p-5 border rounded-2xl">
-                             <Badge>NAICS</Badge><span className="font-mono font-bold text-xl">{caseData.industry.naicsCode || 'Pending'}</span>
+              <div className="space-y-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-2xl font-black text-primary tracking-tight">Industry Benchmarks</h2>
+                    <p className="text-sm text-muted-foreground font-medium">NAICS/SIC Classification Profile for {caseData.client}</p>
+                  </div>
+                  <Button 
+                    onClick={handleIndustryAnalysis} 
+                    disabled={isAnalyzingIndustry} 
+                    className="bg-primary hover:bg-primary/90 font-bold uppercase text-xs h-11 px-8 shadow-lg"
+                  >
+                    {isAnalyzingIndustry ? <Loader2 className="mr-2 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4 fill-accent text-accent" />}
+                    {caseData.industry ? "Refresh Profile" : "Generate Classification"}
+                  </Button>
+                </div>
+
+                {!caseData.industry ? (
+                  <Card className="border-2 border-dashed border-primary/20 bg-primary/5 py-24 text-center">
+                    <CardContent>
+                      <Building2 className="h-12 w-12 mx-auto mb-6 text-primary/40" />
+                      <h3 className="text-xl font-bold text-primary tracking-tight">Identify Sector & Market Codes</h3>
+                      <p className="text-sm text-muted-foreground mt-2 max-w-sm mx-auto font-medium leading-relaxed">
+                        The AI will analyze the business description and engagement context to determine the most accurate industry classification for this matter.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid gap-6 lg:grid-cols-12">
+                    <Card className="lg:col-span-8 border-none shadow-sm bg-white overflow-hidden">
+                      <CardHeader className="bg-muted/10 border-b">
+                        <div className="flex items-center gap-3">
+                          <div className="bg-primary/10 p-2 rounded-lg">
+                            <BarChart3 className="h-5 w-5 text-primary" />
                           </div>
-                          <div className="flex items-center justify-between p-5 border rounded-2xl">
-                             <Badge>SIC</Badge><span className="font-mono font-bold text-xl">{caseData.industry.sicCode || 'Pending'}</span>
+                          <div>
+                            <CardTitle className="text-sm font-bold uppercase tracking-widest text-primary">Sector Identification</CardTitle>
+                            <CardDescription className="text-xs">Based on current forensic context for {caseData.client}</CardDescription>
                           </div>
                         </div>
+                      </CardHeader>
+                      <CardContent className="p-8">
+                        <div className="space-y-8">
+                          <div>
+                            <label className="text-[10px] font-black uppercase text-muted-foreground/60 tracking-[0.2em] block mb-3">Primary Sector Title</label>
+                            <div className="p-6 bg-primary/5 rounded-2xl border border-primary/10 flex items-center justify-between group transition-all hover:border-primary/30">
+                              <p className="text-2xl font-black text-primary">{caseData.industry.suggestedIndustry}</p>
+                              <CheckCircle2 className="h-6 w-6 text-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+                            <div className="p-6 border rounded-2xl bg-white space-y-4 hover:shadow-md transition-shadow">
+                              <div className="flex items-center justify-between">
+                                <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-widest px-3">NAICS Code</Badge>
+                                <Hash className="h-4 w-4 text-muted-foreground/30" />
+                              </div>
+                              <p className="text-3xl font-mono font-black text-slate-800">{caseData.industry.naicsCode || 'N/A'}</p>
+                              <p className="text-[10px] text-muted-foreground font-medium uppercase leading-relaxed">
+                                North American Industry Classification System
+                              </p>
+                            </div>
+
+                            <div className="p-6 border rounded-2xl bg-white space-y-4 hover:shadow-md transition-shadow">
+                              <div className="flex items-center justify-between">
+                                <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-widest px-3">SIC Code</Badge>
+                                <Hash className="h-4 w-4 text-muted-foreground/30" />
+                              </div>
+                              <p className="text-3xl font-mono font-black text-slate-800">{caseData.industry.sicCode || 'N/A'}</p>
+                              <p className="text-[10px] text-muted-foreground font-medium uppercase leading-relaxed">
+                                Standard Industrial Classification
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                      <CardFooter className="bg-muted/5 border-t py-4">
+                        <div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                          <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+                          Validated for Forensic Reporting Compliance
+                        </div>
+                      </CardFooter>
+                    </Card>
+
+                    <div className="lg:col-span-4 space-y-6">
+                      <Card className="border-none shadow-sm bg-primary text-white overflow-hidden">
+                        <CardHeader>
+                          <CardTitle className="text-xs font-bold uppercase tracking-widest">Benchmark Resources</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4">
+                          <p className="text-xs opacity-80 leading-relaxed font-medium">
+                            Use these codes to pull comparative market multiples from IbisWorld or BVR DealStats.
+                          </p>
+                          <div className="space-y-2">
+                            <Button variant="ghost" className="w-full justify-start text-xs font-bold uppercase bg-white/10 hover:bg-white/20 h-10">
+                              <Globe className="mr-2 h-4 w-4" /> Open IbisWorld API
+                            </Button>
+                            <Button variant="ghost" className="w-full justify-start text-xs font-bold uppercase bg-white/10 hover:bg-white/20 h-10">
+                              <Calculator className="mr-2 h-4 w-4" /> Open BVR Connector
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      <div className="p-6 rounded-2xl bg-white border border-border/50 shadow-sm flex gap-4">
+                        <div className="bg-primary/5 p-3 rounded-xl h-fit">
+                          <Info className="h-5 w-5 text-primary" />
+                        </div>
+                        <div>
+                          <h4 className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Audit Tip</h4>
+                          <p className="text-[11px] text-muted-foreground leading-relaxed font-medium">
+                            Industry codes ensure the peer group selection for market multiples is defensible in court.
+                          </p>
+                        </div>
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
+                    </div>
+                  </div>
+                )}
               </div>
             </TabsContent>
 
