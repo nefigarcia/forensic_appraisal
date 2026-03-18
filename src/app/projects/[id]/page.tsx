@@ -73,7 +73,7 @@ import {
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { Progress } from "@/components/ui/progress"
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 export default function ProjectDetail() {
   const { id } = useParams()
@@ -253,42 +253,93 @@ export default function ProjectDetail() {
     });
   }
 
-  const handleDownloadXlsx = () => {
+  const handleDownloadXlsx = async () => {
     if (!ttmReport || !caseData) return;
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('TTM Analysis');
+
+    // Professional Header Setup
+    worksheet.addRow(['VALUVAULT AI | PROFESSIONAL FORENSIC VALUATION REPORT']);
+    worksheet.addRow(['CLIENT:', caseData.client]);
+    worksheet.addRow(['REPORT:', `${activeStatementType || "Universal TTM"} Normalization Report`]);
+    worksheet.addRow(['DATE:', format(new Date(), 'MMM d, yyyy')]);
+    worksheet.addRow([]); // Spacer Row
+
+    // Main Header Row
+    const headerRow = worksheet.addRow(["Standardized Item", ...ttmYears, "Trailing 12m"]);
     
-    const wb = XLSX.utils.book_new();
-    const dataRows = [];
-    
-    // Professional Header
-    dataRows.push(["CLIENT:", caseData.client]);
-    dataRows.push(["REPORT:", `${activeStatementType || "Universal TTM"} Normalization Report`]);
-    dataRows.push(["DATE:", format(new Date(), 'MMM d, yyyy')]);
-    dataRows.push([]); // Spacer
-    
-    // Table Headers
-    const headers = ["Standardized Item", ...ttmYears, "Trailing 12m"];
-    dataRows.push(headers);
-    
-    // Populate Data
+    // Style the Header Row
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF2563EB' } // Primary Blue
+      };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+
+    // Populate Data with Styling
     ttmReport.standardizedReport.forEach((cat: any) => {
-      dataRows.push([cat.category.toUpperCase()]);
+      // Category Heading Row
+      const catRow = worksheet.addRow([cat.category.toUpperCase()]);
+      catRow.getCell(1).font = { bold: true, size: 11, color: { argb: 'FF1E40AF' } };
+      catRow.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFF3F4F6' } // Light Muted Gray
+      };
+
       cat.items.forEach((item: any) => {
-        const row = [
+        const rowData = [
           item.standardizedLabel,
           ...ttmYears.map(year => item.valuesByYear[year] || 0),
           item.ttmValue || 0
         ];
-        dataRows.push(row);
+        const row = worksheet.addRow(rowData);
+        
+        // Format Currency Cells
+        for (let i = 2; i <= row.cellCount; i++) {
+          row.getCell(i).numFmt = '"$"#,##0.00;[Red]("$"#,##0.00)';
+          row.getCell(i).alignment = { horizontal: 'right' };
+        }
+        
+        // Style Trailing 12m Column
+        const ttmCell = row.getCell(row.cellCount);
+        ttmCell.font = { bold: true };
+        ttmCell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFEFF6FF' } // Very Light Blue
+        };
       });
+      worksheet.addRow([]); // Spacer after each category
     });
+
+    // Column Sizing
+    worksheet.columns = [
+      { width: 35 }, // Item label
+      ...ttmYears.map(() => ({ width: 15 })), // Years
+      { width: 20 } // TTM Column
+    ];
+
+    // Style the Report Title
+    worksheet.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF1D4ED8' } };
     
-    const ws = XLSX.utils.aoa_to_sheet(dataRows);
-    XLSX.utils.book_append_sheet(wb, ws, "TTM Analysis");
+    // Generate and Trigger Download
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${caseData.client.replace(/\s+/g, '_')}_Forensic_TTM_Report.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
     
-    const filename = `${caseData.client.replace(/\s+/g, '_')}_TTM_${activeStatementType?.replace(/\s+/g, '_') || 'Report'}.xlsx`;
-    XLSX.writeFile(wb, filename);
-    
-    toast({ title: "Download Started", description: `File saved as ${filename}` });
+    toast({ title: "Download Started", description: "Styled Excel file generated successfully." });
   };
 
   const handleBinderChat = async () => {
