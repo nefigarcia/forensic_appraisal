@@ -32,7 +32,8 @@ import {
   History,
   FileBarChart,
   Grid3X3,
-  ChevronRight
+  ChevronRight,
+  Copy
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
@@ -187,6 +188,11 @@ export default function ProjectDetail() {
     return { years, rows };
   }, [activeStatementType, groupedData]);
 
+  const ttmYears = React.useMemo(() => {
+    if (!ttmReport) return [];
+    return Array.from(new Set(ttmReport.standardizedReport.flatMap((c: any) => c.items.flatMap((i: any) => Object.keys(i.valuesByYear))))).sort() as string[];
+  }, [ttmReport]);
+
   const handleExtraction = async () => {
     if (!caseData?.documents || caseData.documents.length === 0) {
       toast({ title: "No Documents", description: "Please upload a document to the binder first.", variant: "destructive" })
@@ -216,6 +222,32 @@ export default function ProjectDetail() {
     } finally {
       setIsNormalizing(false);
     }
+  }
+
+  const handleCopyTtmToClipboard = () => {
+    if (!ttmReport || !caseData) return;
+    
+    let text = `Client: ${caseData.client}\tReport: Universal TTM Normalization Report\n\n`;
+    const headers = ["Standardized Item", ...ttmYears, "Trailing 12m"];
+    text += headers.join("\t") + "\n";
+
+    ttmReport.standardizedReport.forEach((cat: any) => {
+      text += `\n${cat.category.toUpperCase()}\n`;
+      cat.items.forEach((item: any) => {
+        const row = [
+          item.standardizedLabel,
+          ...ttmYears.map(year => item.valuesByYear[year] || 0),
+          item.ttmValue || 0
+        ];
+        text += row.join("\t") + "\n";
+      });
+    });
+
+    navigator.clipboard.writeText(text).then(() => {
+      toast({ title: "Copied to Clipboard", description: "Data formatted for Excel (tab-separated)." });
+    }).catch(err => {
+      toast({ title: "Copy Failed", variant: "destructive" });
+    });
   }
 
   const handleBinderChat = async () => {
@@ -322,8 +354,6 @@ export default function ProjectDetail() {
 
   if (loading) return <div className="flex items-center justify-center min-h-screen"><Loader2 className="animate-spin text-primary h-8 w-8" /></div>;
   if (!caseData) return <div className="p-8 text-center">Case not found.</div>;
-
-  const ttmYears = ttmReport ? Array.from(new Set(ttmReport.standardizedReport.flatMap((c: any) => c.items.flatMap((i: any) => Object.keys(i.valuesByYear))))).sort() : [];
 
   return (
     <SidebarProvider>
@@ -700,8 +730,13 @@ export default function ProjectDetail() {
                       {isNormalizing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Grid3X3 className="mr-2 h-4 w-4" />}
                       Generate Structured TTM
                     </Button>
-                    <Button variant="outline" className="h-11 px-6 font-bold uppercase text-xs">
-                      <Download className="mr-2 h-4 w-4" />
+                    <Button 
+                      onClick={handleCopyTtmToClipboard}
+                      disabled={!ttmReport}
+                      variant="outline" 
+                      className="h-11 px-6 font-bold uppercase text-xs"
+                    >
+                      <Copy className="mr-2 h-4 w-4" />
                       Excel Copy/Paste
                     </Button>
                   </div>
@@ -719,6 +754,12 @@ export default function ProjectDetail() {
                   </Card>
                 ) : (
                   <div className="space-y-8">
+                    <div className="bg-primary/5 p-8 rounded-2xl border text-center shadow-inner">
+                      <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-primary/60 mb-2">Internal Valuation Workpaper</h3>
+                      <h2 className="text-3xl font-black text-primary tracking-tight">{caseData.client}</h2>
+                      <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground mt-1">Universal TTM Normalization Report</p>
+                    </div>
+
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       <Card className="bg-white border-none shadow-sm">
                         <CardHeader className="pb-2"><CardTitle className="text-[10px] uppercase font-bold text-muted-foreground">EBITDA (TTM)</CardTitle></CardHeader>
