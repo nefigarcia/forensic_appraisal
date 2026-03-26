@@ -1,112 +1,73 @@
-'use server';
-/**
- * @fileOverview A Genkit flow for extracting key financial data from various document types, including PDFs and images.
- *
- * - extractFinancialData - A function that handles the financial data extraction process.
- * - FinancialDocumentExtractionInput - The input type for the extractFinancialData function.
- * - FinancialDocumentExtractionOutput - The return type for the extractFinancialData function.
- */
+'use server'
+import { ai } from '@/ai/genkit'
+import { z } from 'genkit'
 
-import { ai } from '@/ai/genkit';
-import { z } from 'genkit';
+const safetyOff = [
+  { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+  { category: 'HARM_CATEGORY_HARASSMENT',         threshold: 'BLOCK_NONE' },
+  { category: 'HARM_CATEGORY_HATE_SPEECH',        threshold: 'BLOCK_NONE' },
+  { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',  threshold: 'BLOCK_NONE' },
+] as const
 
-const FinancialDocumentExtractionInputSchema = z.object({
-  documentDataUri: z
-    .string()
-    .describe(
-      "The financial document (e.g., PDF, JPEG, or PNG scan) as a data URI that must include a MIME type and use Base64 encoding. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
-    ),
-  documentName: z
-    .string()
-    .optional()
-    .describe('Optional: The name of the document for better context.'),
-  documentTypeHint: z
-    .string()
-    .optional()
-    .describe(
-      'Optional: A hint about the document type (e.g., "Balance Sheet", "Income Statement", "Tax Return") to guide extraction.'
-    ),
-});
-export type FinancialDocumentExtractionInput = z.infer<
-  typeof FinancialDocumentExtractionInputSchema
->;
+const InputSchema = z.object({
+  documentDataUri:  z.string().describe("Base64 data URI of the document (PDF/image)."),
+  documentName:     z.string().optional(),
+  documentTypeHint: z.string().optional(),
+})
+export type FinancialDocumentExtractionInput = z.infer<typeof InputSchema>
 
-const FinancialDocumentExtractionOutputSchema = z.object({
-  extractedData: z
-    .array(
-      z.object({
-        year: z.string().describe('The year to which the financial data pertains.').nullable(),
-        statementType:
-          z.string().describe('The type of financial statement (e.g., "Income Statement", "Balance Sheet", "Tax Return").').nullable(),
-        lineItem: z.string().describe('The specific financial line item (e.g., "Revenue", "Cash").'),
-        value: z.number().nullable().describe('The numeric value of the financial line item. Null if not found.'),
-        unit: z.string().optional().describe('The unit of the value, e.g., "USD", "shares".'),
-        currency: z.string().optional().describe('The currency of the value, e.g., "USD", "EUR".'),
-      })
-    )
-    .describe(
-      'An array of extracted financial data points, each including year, statement type, line item, and value.'
-    ),
-});
-export type FinancialDocumentExtractionOutput = z.infer<
-  typeof FinancialDocumentExtractionOutputSchema
->;
+const ItemSchema = z.object({
+  year:          z.string().nullable(),
+  statementType: z.string().nullable(),
+  lineItem:      z.string(),
+  value:         z.number().nullable(),
+  unit:          z.string().optional(),
+  currency:      z.string().optional(),
+  confidence:    z.number().min(0).max(1).describe('Extraction confidence 0-1. Use 0.95+ for clearly legible values, 0.7-0.94 for slightly ambiguous, below 0.7 for unclear.'),
+  sourceRef:     z.string().optional().describe('Location in document: e.g. "page 2, table 1, row Revenue"'),
+})
 
-export async function extractFinancialData(
-  input: FinancialDocumentExtractionInput
-): Promise<FinancialDocumentExtractionOutput> {
-  return financialDocumentExtractionFlow(input);
+const OutputSchema = z.object({
+  extractedData: z.array(ItemSchema),
+})
+export type FinancialDocumentExtractionOutput = z.infer<typeof OutputSchema>
+
+export async function extractFinancialData(input: FinancialDocumentExtractionInput): Promise<FinancialDocumentExtractionOutput> {
+  return financialDocumentExtractionFlow(input)
 }
 
-const extractFinancialDataPrompt = ai.definePrompt({
+const prompt = ai.definePrompt({
   name: 'extractFinancialDataPrompt',
-  input: { schema: FinancialDocumentExtractionInputSchema },
-  output: { schema: FinancialDocumentExtractionOutputSchema },
-  config: {
-    safetySettings: [
-      {
-        category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-        threshold: 'BLOCK_NONE',
-      },
-      {
-        category: 'HARM_CATEGORY_HARASSMENT',
-        threshold: 'BLOCK_NONE',
-      },
-      {
-        category: 'HARM_CATEGORY_HATE_SPEECH',
-        threshold: 'BLOCK_NONE',
-      },
-      {
-        category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-        threshold: 'BLOCK_NONE',
-      },
-    ],
-  },
-  prompt: `You are an expert financial data extractor assistant specialized in forensic accounting. 
+  input: { schema: InputSchema },
+  output: { schema: OutputSchema },
+  config: { safetySettings: safetyOff },
+  prompt: `You are an expert forensic accountant and financial data extractor.
 
-Your task is to accurately extract key financial data points from the provided document. This document may be a high-quality PDF or a scanned image/photo of a page. You must perform advanced visual analysis and OCR to detect tables, line items, and numeric values.
+Extract all financial data from the document below. For every value you extract, you MUST also provide:
+- confidence: a float 0.0–1.0 indicating how certain you are the value is correct and legible
+  - 0.95–1.0: value is clearly printed/typed, no ambiguity
+  - 0.70–0.94: value is slightly ambiguous (e.g. faint scan, small font)
+  - 0.40–0.69: value is unclear or partially obscured
+  - below 0.40: value is a best guess
+- sourceRef: the exact location of the value in the document (e.g. "page 3, Income Statement table, row: 'Gross Revenue'")
 
-Carefully analyze the provided financial document:
-1. Identify all relevant financial line items and their values.
-2. Group data by the year it pertains to.
-3. For scanned images, pay close attention to columns and rows to ensure values are mapped to the correct line items.
-4. If you see a multi-page document, process all visible sections.
+Instructions:
+1. Extract ALL financial line items and their values.
+2. Group by the year they pertain to.
+3. For scanned/handwritten documents, perform careful OCR and note lower confidence.
+4. Negative values (in parentheses or with minus sign) must be stored as negative numbers.
+5. Do NOT invent values. If a value is illegible, return confidence < 0.4 and value as null.
 
-If the document is identified as a '{{documentTypeHint}}' (or if a document name '{{documentName}}' is provided), focus on standard fields expected for that type.
+Document type hint: {{documentTypeHint}}
+Document name: {{documentName}}
 
-Structure the output as a JSON array of objects. Each object MUST include 'year', 'statementType', 'lineItem', and 'value'. 'value' should be a number. If a value is negative (often in parentheses or marked with a minus sign), represent it as a negative number.
-
-Document for analysis: {{media url=documentDataUri}}`,
-});
+Document: {{media url=documentDataUri}}`,
+})
 
 const financialDocumentExtractionFlow = ai.defineFlow(
-  {
-    name: 'financialDocumentExtractionFlow',
-    inputSchema: FinancialDocumentExtractionInputSchema,
-    outputSchema: FinancialDocumentExtractionOutputSchema,
-  },
+  { name: 'financialDocumentExtractionFlow', inputSchema: InputSchema, outputSchema: OutputSchema },
   async (input) => {
-    const { output } = await extractFinancialDataPrompt(input);
-    return output!;
-  }
-);
+    const { output } = await prompt(input)
+    return output!
+  },
+)

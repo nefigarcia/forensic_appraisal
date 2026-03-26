@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 
 /* ─────────────────────────────────────────
@@ -17,6 +17,7 @@ function frameSrc(n: number) {
 export default function LandingPage() {
   /* refs ─ all DOM nodes the effect needs */
   const loaderRef       = useRef<HTMLDivElement>(null)
+  const [plansOpen, setPlansOpen] = useState(false)
   const loaderBarRef    = useRef<HTMLDivElement>(null)
   const loaderPctRef    = useRef<HTMLSpanElement>(null)
   const headerRef       = useRef<HTMLElement>(null)
@@ -411,7 +412,7 @@ export default function LandingPage() {
           </div>
           <div className="lp-nav-ctas">
             <Link href="/dashboard" className="lp-btn-ghost">Sign In</Link>
-            <Link href="/dashboard" className="lp-btn-primary">Book Demo</Link>
+            <button onClick={() => setPlansOpen(true)} className="lp-btn-primary">Free Trial</button>
           </div>
         </nav>
       </header>
@@ -431,7 +432,7 @@ export default function LandingPage() {
           </h1>
           <p className="hero-tagline lp-hero-tag">From messy documents to court-ready valuation reports — automated, defensible, precise.</p>
           <div className="hero-ctas lp-hero-ctas">
-            <Link href="/dashboard" className="lp-btn-gold">Open Case Manager <span>→</span></Link>
+            <button onClick={() => setPlansOpen(true)} className="lp-btn-gold">Start Free Trial <span>→</span></button>
             <a href="#scroll-container" className="lp-btn-outline">Explore Platform ↓</a>
           </div>
         </div>
@@ -532,8 +533,8 @@ export default function LandingPage() {
             <h2 className="section-heading lp-cta-heading">Ready to Eliminate the Manual Grind?</h2>
             <p className="section-body">Join 500+ forensic appraisal specialists who use ValuVault AI to deliver faster, more defensible engagements.</p>
             <div className="cta-buttons lp-cta-buttons">
-              <Link href="/dashboard" className="lp-btn-gold section-cta">Start Free Trial →</Link>
-              <Link href="/dashboard" className="lp-btn-outline-dark section-cta">Book a Demo</Link>
+              <button onClick={() => setPlansOpen(true)} className="lp-btn-gold section-cta">Start Free Trial →</button>
+              <button onClick={() => setPlansOpen(true)} className="lp-btn-outline-dark section-cta">View Plans</button>
             </div>
             <div className="cta-trust lp-trust">
               <span>SOC2 Type II</span><span>·</span>
@@ -582,6 +583,154 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
+
+      {/* ── Plans Modal ─────────────────────────────────────────────────── */}
+      {plansOpen && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: 'rgba(8,12,24,0.82)', backdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '1rem',
+          }}
+          onClick={() => setPlansOpen(false)}
+        >
+          <div
+            style={{
+              background: '#0d1321', border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '1.25rem', padding: '2.5rem 2rem',
+              maxWidth: '860px', width: '100%', position: 'relative',
+              boxShadow: '0 32px 80px rgba(0,0,0,0.6)',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Close */}
+            <button
+              onClick={() => setPlansOpen(false)}
+              style={{
+                position: 'absolute', top: '1.25rem', right: '1.25rem',
+                background: 'rgba(255,255,255,0.08)', border: 'none',
+                color: '#fff', width: '2rem', height: '2rem', borderRadius: '50%',
+                cursor: 'pointer', fontSize: '1rem', lineHeight: 1,
+              }}
+            >×</button>
+
+            {/* Header */}
+            <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+              <p style={{ fontSize: '0.65rem', letterSpacing: '0.25em', color: 'var(--lp-accent, #d4a017)', textTransform: 'uppercase', marginBottom: '0.5rem' }}>
+                Choose your plan
+              </p>
+              <h2 style={{ fontSize: '1.75rem', fontWeight: 900, color: '#fff', margin: 0 }}>
+                Start Your 7-Day Free Trial
+              </h2>
+              <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem', marginTop: '0.5rem' }}>
+                No credit card required for the Solo trial. Cancel anytime.
+              </p>
+            </div>
+
+            {/* Plan cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+              {[
+                {
+                  name: 'Solo',
+                  badge: '7-Day Free Trial',
+                  badgeFree: true,
+                  price: '$149',
+                  period: '/mo after trial',
+                  desc: 'For independent forensic appraisers.',
+                  features: ['Up to 15 active cases', 'Full AI extraction', 'Anomaly detection', 'DCF + GPCM engine', 'AI report drafting', 'Audit trail'],
+                  cta: 'Start Free Trial',
+                  ctaPrimary: true,
+                  href: '/signup',
+                },
+                {
+                  name: 'Firm',
+                  badge: 'Most Popular',
+                  badgeFree: false,
+                  price: '$499',
+                  period: '/mo',
+                  desc: 'For small to mid-size appraisal firms.',
+                  features: ['Up to 100 cases', 'Up to 10 users', 'Role-based access', 'All Solo features', 'SharePoint connector', 'Priority support'],
+                  cta: 'Get Started',
+                  ctaPrimary: false,
+                  href: '/signup',
+                },
+                {
+                  name: 'Enterprise',
+                  badge: 'Custom',
+                  badgeFree: false,
+                  price: 'Contact us',
+                  period: '',
+                  desc: 'Unlimited scale for large institutions.',
+                  features: ['Unlimited cases & users', 'SSO / SAML', 'Custom AI tuning', 'SLA guarantee', 'All Firm features', 'Dedicated CSM'],
+                  cta: 'Talk to Sales',
+                  ctaPrimary: false,
+                  href: 'mailto:sales@valuvault.ai?subject=Enterprise%20Plan%20Inquiry',
+                },
+              ].map(plan => (
+                <div
+                  key={plan.name}
+                  style={{
+                    background: plan.ctaPrimary ? 'rgba(212,160,23,0.07)' : 'rgba(255,255,255,0.04)',
+                    border: plan.ctaPrimary ? '1px solid rgba(212,160,23,0.4)' : '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: '1rem', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem',
+                  }}
+                >
+                  {/* Badge */}
+                  <div style={{
+                    display: 'inline-block', alignSelf: 'flex-start',
+                    background: plan.badgeFree ? 'rgba(212,160,23,0.2)' : 'rgba(255,255,255,0.1)',
+                    color: plan.badgeFree ? '#d4a017' : 'rgba(255,255,255,0.6)',
+                    fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.15em',
+                    textTransform: 'uppercase', padding: '0.25rem 0.65rem', borderRadius: '999px',
+                  }}>
+                    {plan.badge}
+                  </div>
+
+                  {/* Name + price */}
+                  <div>
+                    <p style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 0.25rem' }}>{plan.name}</p>
+                    <p style={{ fontSize: '1.6rem', fontWeight: 900, color: '#fff', margin: 0, lineHeight: 1 }}>{plan.price}</p>
+                    {plan.period && <p style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.4)', margin: '0.2rem 0 0' }}>{plan.period}</p>}
+                    <p style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', marginTop: '0.5rem' }}>{plan.desc}</p>
+                  </div>
+
+                  {/* Features */}
+                  <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '0.4rem', flex: 1 }}>
+                    {plan.features.map(f => (
+                      <li key={f} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.4rem', fontSize: '0.75rem', color: 'rgba(255,255,255,0.65)' }}>
+                        <span style={{ color: '#4ade80', marginTop: '0.05rem', flexShrink: 0 }}>✓</span>{f}
+                      </li>
+                    ))}
+                  </ul>
+
+                  {/* CTA */}
+                  <a
+                    href={plan.href}
+                    style={{
+                      display: 'block', textAlign: 'center', textDecoration: 'none',
+                      padding: '0.65rem 1rem', borderRadius: '0.5rem',
+                      fontWeight: 700, fontSize: '0.75rem', letterSpacing: '0.08em', textTransform: 'uppercase',
+                      background: plan.ctaPrimary ? 'var(--lp-accent, #d4a017)' : 'rgba(255,255,255,0.1)',
+                      color: plan.ctaPrimary ? '#0d1321' : '#fff',
+                      border: plan.ctaPrimary ? 'none' : '1px solid rgba(255,255,255,0.15)',
+                      transition: 'opacity 0.15s',
+                    }}
+                    onMouseOver={e => (e.currentTarget.style.opacity = '0.85')}
+                    onMouseOut={e => (e.currentTarget.style.opacity = '1')}
+                  >
+                    {plan.cta}
+                  </a>
+                </div>
+              ))}
+            </div>
+
+            <p style={{ textAlign: 'center', color: 'rgba(255,255,255,0.25)', fontSize: '0.7rem', marginTop: '1.5rem' }}>
+              SOC2 Type II · 256-bit Encryption · NACVA / ASA Aligned · Cancel anytime
+            </p>
+          </div>
+        </div>
+      )}
 
     </div>
   )

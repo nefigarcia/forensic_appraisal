@@ -8,14 +8,28 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─────────────────────────────────────────────────
+// ORGANIZATION & USERS
+// ─────────────────────────────────────────────────
+
 model Organization {
-  id        String   @id @default(cuid())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  users     User[]
-  cases     Case[]
-  connectors ExternalConnector[]
+  id                    String              @id @default(cuid())
+  name                  String
+  plan                  String              @default("TRIAL")   // TRIAL | SOLO | FIRM | ENTERPRISE
+  trialEndsAt           DateTime?
+  // Stripe billing
+  stripeCustomerId      String?             @unique
+  stripeSubscriptionId  String?             @unique
+  stripePriceId         String?
+  subscriptionStatus    String              @default("TRIAL")   // TRIAL | ACTIVE | PAST_DUE | CANCELED | PAUSED
+  currentPeriodEnd      DateTime?
+  casesLimit            Int                 @default(3)
+  usersLimit            Int                 @default(1)
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  users                 User[]
+  cases                 Case[]
+  connectors            ExternalConnector[]
 }
 
 model User {
@@ -23,81 +37,237 @@ model User {
   email          String       @unique
   password       String
   name           String
-  role           String       @default("USER")
+  role           String       @default("EDITOR")  // ADMIN | EDITOR | REVIEWER | VIEWER
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
+  auditLogs      AuditLog[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 }
+
+// ─────────────────────────────────────────────────
+// CASES (ENGAGEMENTS)
+// ─────────────────────────────────────────────────
 
 model Case {
-  id             String       @id @default(cuid())
-  name           String
-  client         String
-  type           String
-  manager        String
-  status         String       @default("ACTIVE")
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  documents      Document[]
-  financialData  FinancialValue[]
-  industry       IndustryClassification?
-  valuationModels ValuationModel[]
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id               String                  @id @default(cuid())
+  name             String
+  client           String
+  type             String
+  manager          String
+  status           String                  @default("ACTIVE") // ACTIVE | REVIEW | CLOSED | ARCHIVED
+  purposeOfValue   String?
+  standardOfValue  String?                 @default("FMV")    // FMV | FV | IV | BEV
+  valuationDate    DateTime?
+  reportDueDate    DateTime?
+  organizationId   String
+  organization     Organization            @relation(fields: [organizationId], references: [id])
+  documents        Document[]
+  financialData    FinancialValue[]
+  addBacks         AddBack[]
+  industry         IndustryClassification?
+  valuationModels  ValuationModel[]
+  anomalyFlags     AnomalyFlag[]
+  auditLogs        AuditLog[]
+  insights         CaseInsight[]
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
 }
+
+// ─────────────────────────────────────────────────
+// DOCUMENTS
+// ─────────────────────────────────────────────────
 
 model Document {
-  id        String   @id @default(cuid())
-  caseId    String
-  case      Case     @relation(fields: [caseId], references: [id])
-  name      String
-  type      String
-  size      String
-  s3Key     String?
-  status    String   @default("PENDING")
-  createdAt DateTime @default(now())
+  id             String           @id @default(cuid())
+  caseId         String
+  case           Case             @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  name           String
+  type           String
+  size           String
+  s3Key          String?
+  sha256Hash     String?          // tamper-evident integrity hash
+  status         String           @default("PENDING") // PENDING | EXTRACTED | VERIFIED | REJECTED
+  pageCount      Int?
+  financialValues FinancialValue[]
+  createdAt      DateTime         @default(now())
 }
+
+// ─────────────────────────────────────────────────
+// FINANCIAL VALUES (Hybrid AI + Human)
+// ─────────────────────────────────────────────────
 
 model FinancialValue {
-  id            String   @id @default(cuid())
-  caseId        String
-  case          Case     @relation(fields: [caseId], references: [id])
-  year          String
-  statementType String
-  lineItem      String
-  value         Float
-  currency      String   @default("USD")
-  isVerified    Boolean  @default(false)
-  createdAt     DateTime @default(now())
+  id               String    @id @default(cuid())
+  caseId           String
+  case             Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  documentId       String?
+  document         Document? @relation(fields: [documentId], references: [id])
+  year             String
+  statementType    String
+  lineItem         String
+  value            Float
+  aiSuggestedValue Float?    // original AI-extracted value (immutable reference)
+  confidence       Float?    // 0.0–1.0 from AI
+  sourceRef        String?   // e.g. "page 4, table 2, row 'Gross receipts'"
+  currency         String    @default("USD")
+  isVerified       Boolean   @default(false)
+  isLocked         Boolean   @default(false)   // locked values never overwritten by re-runs
+  reviewStatus     String    @default("PENDING") // PENDING | ACCEPTED | OVERRIDDEN | REJECTED
+  overrideReason   String?   @db.Text
+  overriddenBy     String?   // userId
+  overriddenAt     DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 }
 
+// ─────────────────────────────────────────────────
+// NORMALIZATION ADD-BACKS
+// ─────────────────────────────────────────────────
+
+model AddBack {
+  id              String   @id @default(cuid())
+  caseId          String
+  case            Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  category        String   // OWNER_COMP | PERSONAL_EXPENSE | NON_RECURRING | RENT_ADJUSTMENT | DEPRECIATION | NON_CASH | OTHER
+  description     String
+  year2           Float?   // 2 years ago
+  year1           Float?   // last full year
+  ttm             Float?   // trailing twelve months
+  aiSuggested     Boolean  @default(false)
+  confidence      Float?
+  rationale       String?  @db.Text // required before report generation
+  isApproved      Boolean  @default(false)
+  approvedBy      String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────
+// INDUSTRY CLASSIFICATION
+// ─────────────────────────────────────────────────
+
 model IndustryClassification {
-  id                String  @id @default(cuid())
-  caseId            String  @unique
-  case              Case    @relation(fields: [caseId], references: [id])
+  id                String   @id @default(cuid())
+  caseId            String   @unique
+  case              Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
   suggestedIndustry String
   naicsCode         String?
   sicCode           String?
+  description       String?  @db.Text
+  confidence        Float?
   createdAt         DateTime @default(now())
 }
 
+// ─────────────────────────────────────────────────
+// VALUATION MODELS (all approaches)
+// ─────────────────────────────────────────────────
+
 model ValuationModel {
-  id            String   @id @default(cuid())
-  caseId        String
-  case          Case     @relation(fields: [caseId], references: [id])
-  ebitda        Float
-  multiplier    Float
-  growthRate    Float
-  valuationType String
-  createdAt     DateTime @default(now())
+  id               String   @id @default(cuid())
+  caseId           String
+  case             Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  valuationType    String   // MARKET_APPROACH | DCF | ASSET_BASED | BLENDED
+  label            String?  // e.g. "Market Approach — EBITDA Multiple"
+
+  // Market approach (EBITDA multiple / GPCM)
+  ebitda           Float?
+  multiplier       Float?
+  growthRate       Float?
+
+  // DCF inputs
+  dcfYear1         Float?
+  dcfYear2         Float?
+  dcfYear3         Float?
+  dcfYear4         Float?
+  dcfYear5         Float?
+  terminalGrowth   Float?   @default(0.03)
+  discountRate     Float?   @default(0.20)  // WACC
+  // WACC components
+  riskFreeRate     Float?
+  equityRiskPremium Float?
+  sizePremium      Float?
+  specificRisk     Float?
+
+  // Concluded value
+  indicatedValue   Float?
+  weight           Float?   @default(1.0)  // weighting in reconciliation (0–1)
+
+  // Reconciliation notes
+  reconciliationNote String? @db.Text
+
+  createdAt        DateTime @default(now())
 }
+
+// ─────────────────────────────────────────────────
+// FORENSIC ANOMALY FLAGS
+// ─────────────────────────────────────────────────
+
+model AnomalyFlag {
+  id           String   @id @default(cuid())
+  caseId       String
+  case         Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  severity     String   // HIGH | MEDIUM | LOW
+  category     String   // BENFORD | OUTLIER | RELATED_PARTY | RATIO_BREAK | DUPLICATE | MARGIN_SHIFT
+  title        String
+  description  String   @db.Text
+  affectedRows String?  @db.Text // JSON array of FinancialValue IDs
+  status       String   @default("OPEN") // OPEN | INVESTIGATED | EXPLAINED | ESCALATED
+  resolution   String?  @db.Text
+  resolvedBy   String?
+  resolvedAt   DateTime?
+  createdAt    DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────────
+// PROACTIVE AI INSIGHTS
+// ─────────────────────────────────────────────────
+
+model CaseInsight {
+  id          String   @id @default(cuid())
+  caseId      String
+  case        Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  type        String   // ANOMALY | MISSING_DOC | SUGGESTION | WARNING | COMPLETION
+  title       String
+  body        String   @db.Text
+  actionLabel String?
+  actionPath  String?
+  isDismissed Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────────
+// AUDIT TRAIL (chain of custody)
+// ─────────────────────────────────────────────────
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  caseId      String?
+  case        Case?    @relation(fields: [caseId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  action      String   // UPLOAD_DOC | RUN_EXTRACTION | ACCEPT_VALUE | OVERRIDE_VALUE | REJECT_VALUE | LOCK_VALUE | APPROVE_BATCH | CREATE_CASE | GENERATE_REPORT | RUN_ANOMALY | etc.
+  targetModel String?  // "FinancialValue" | "Document" | "AddBack" | "ValuationModel"
+  targetId    String?
+  oldValue    String?  @db.Text  // JSON
+  newValue    String?  @db.Text  // JSON
+  note        String?  @db.Text
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+
+  @@index([caseId, createdAt])
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────
+// EXTERNAL CONNECTORS
+// ─────────────────────────────────────────────────
 
 model ExternalConnector {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
-  provider       String       // e.g., "microsoft"
+  provider       String
   accessToken    String?      @db.Text
   refreshToken   String?      @db.Text
   expiresAt      DateTime?

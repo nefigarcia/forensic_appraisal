@@ -20,6 +20,7 @@ import {
   Download,
   FileSpreadsheet,
   Edit3,
+  Pencil,
   Search,
   Sparkles,
   ArrowUpRight,
@@ -33,13 +34,30 @@ import {
   ShieldCheck,
   Building2,
   BarChart3,
-  Hash
+  Hash,
+  CheckCheck,
+  XCircle,
+  Lock,
+  Unlock,
+  AlertTriangle,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  ClipboardList,
+  Lightbulb,
+  BookOpen,
+  ListChecks,
+  ImageIcon,
 } from "lucide-react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { getCaseDetails } from "@/app/actions/cases"
 import { addDocument } from "@/app/actions/documents"
-import { runFinancialExtraction, runIndustryAnalysis, updateFinancialValue, approveFinancialValues, askBinder, runTtmNormalization } from "@/app/actions/ai-actions"
+import { runFinancialExtraction, runIndustryAnalysis, updateFinancialValue, approveFinancialValues, askBinder, runTtmNormalization, acceptFinancialValue, overrideFinancialValue, rejectFinancialValue, toggleLockFinancialValue, runAnomalyDetection, resolveAnomalyFlag, refreshCaseInsights, draftReportSection } from "@/app/actions/ai-actions"
+import { ConfidenceBadge } from "@/components/confidence-badge"
+import { OverrideDialog } from "@/components/override-dialog"
+import { AuditLogPanel } from "@/components/audit-log-panel"
+import { AddBackSchedule } from "@/components/add-back-schedule"
 import { getExternalConnections } from "@/app/actions/connectors"
 import { toast } from "@/hooks/use-toast"
 import {
@@ -98,6 +116,15 @@ export default function ProjectDetail() {
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
+  // Hybrid UX state
+  const [overrideTarget, setOverrideTarget] = React.useState<any>(null)
+  const [reviewFilter, setReviewFilter] = React.useState<'ALL' | 'PENDING' | 'ACCEPTED' | 'OVERRIDDEN' | 'REJECTED'>('PENDING')
+  const [isRunningAnomalies, setIsRunningAnomalies] = React.useState(false)
+  const [isRefreshingInsights, setIsRefreshingInsights] = React.useState(false)
+  const [isDraftingSection, setIsDraftingSection] = React.useState<string | null>(null)
+  const [draftedNarrative, setDraftedNarrative] = React.useState<Record<string, string>>({})
+  const [lockingId, setLockingId] = React.useState<string | null>(null)
+
   const loadData = React.useCallback(async () => {
     try {
       const [data, connectors] = await Promise.all([
@@ -108,7 +135,7 @@ export default function ProjectDetail() {
       setCaseData(data);
       setAvailableConnectors(connectors);
       
-      if (data?.financialData?.length > 0 && !activeStatementType) {
+      if (data && (data.financialData?.length ?? 0) > 0 && !activeStatementType) {
         setActiveStatementType(data.financialData[0].statementType);
       }
     } catch (e) {
@@ -434,6 +461,84 @@ export default function ProjectDetail() {
     }
   }
 
+  // ── Hybrid UX handlers ──────────────────────────────────
+  const handleAccept = async (id: string) => {
+    try {
+      await acceptFinancialValue(id)
+      await loadData()
+      toast({ title: 'Value accepted' })
+    } catch (e: any) { toast({ title: e.message, variant: 'destructive' }) }
+  }
+
+  const handleReject = async (id: string) => {
+    try {
+      await rejectFinancialValue(id, 'Rejected by analyst')
+      await loadData()
+      toast({ title: 'Value rejected' })
+    } catch (e: any) { toast({ title: e.message, variant: 'destructive' }) }
+  }
+
+  const handleOverrideConfirm = async (newValue: number, reason: string) => {
+    if (!overrideTarget) return
+    await overrideFinancialValue(overrideTarget.id, newValue, reason)
+    await loadData()
+    toast({ title: 'Value overridden', description: `Set to ${newValue.toLocaleString()}` })
+  }
+
+  const handleToggleLock = async (id: string) => {
+    setLockingId(id)
+    try {
+      await toggleLockFinancialValue(id)
+      await loadData()
+    } catch (e: any) { toast({ title: e.message, variant: 'destructive' }) }
+    finally { setLockingId(null) }
+  }
+
+  const handleRunAnomalies = async () => {
+    setIsRunningAnomalies(true)
+    try {
+      const res = await runAnomalyDetection(id as string)
+      await loadData()
+      toast({ title: `Anomaly scan complete`, description: `${(res as any).saved ?? 0} flags saved` })
+    } catch (e: any) { toast({ title: e.message, variant: 'destructive' }) }
+    finally { setIsRunningAnomalies(false) }
+  }
+
+  const handleResolveFlag = async (flagId: string, resolution: string) => {
+    try {
+      await resolveAnomalyFlag(flagId, resolution, 'INVESTIGATED')
+      await loadData()
+      toast({ title: 'Flag resolved' })
+    } catch (e: any) { toast({ title: e.message, variant: 'destructive' }) }
+  }
+
+  const handleRefreshInsights = async () => {
+    setIsRefreshingInsights(true)
+    try {
+      await refreshCaseInsights(id as string)
+      await loadData()
+      toast({ title: 'Insights refreshed' })
+    } catch (e: any) { toast({ title: e.message, variant: 'destructive' }) }
+    finally { setIsRefreshingInsights(false) }
+  }
+
+  const handleDraftSection = async (section: string) => {
+    setIsDraftingSection(section)
+    try {
+      const res = await draftReportSection(id as string, section as any, draftedNarrative[section])
+      setDraftedNarrative(prev => ({ ...prev, [section]: res.narrative }))
+      toast({ title: `Section drafted: ${section}` })
+    } catch (e: any) { toast({ title: e.message, variant: 'destructive' }) }
+    finally { setIsDraftingSection(null) }
+  }
+
+  const reviewedValues = React.useMemo(() => {
+    if (!caseData?.financialData) return []
+    return caseData.financialData.filter((v: any) =>
+      reviewFilter === 'ALL' ? true : v.reviewStatus === reviewFilter
+    )
+  }, [caseData, reviewFilter])
+
   if (loading) return <div className="flex items-center justify-center min-h-screen"><Loader2 className="animate-spin text-primary h-8 w-8" /></div>;
   if (!caseData) return <div className="p-8 text-center">Case not found.</div>;
 
@@ -442,16 +547,17 @@ export default function ProjectDetail() {
       <AppSidebar />
       <SidebarInset>
         <header className="flex h-16 shrink-0 items-center justify-between px-6 border-b bg-white shadow-sm z-10">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <SidebarTrigger />
-            <Link href="/projects" className="p-2 hover:bg-muted rounded-full transition-colors">
-              <ArrowLeft className="h-4 w-4 text-primary" />
+            <Link href="/projects" className="p-1.5 hover:bg-muted rounded-lg transition-colors">
+              <ArrowLeft className="h-4 w-4 text-muted-foreground" />
             </Link>
-            <div className="border-l pl-4">
-              <h1 className="text-lg font-bold text-primary tracking-tight">{caseData.name}</h1>
+            <div className="h-5 w-px bg-border/60" />
+            <div>
+              <h1 className="text-base font-black text-primary tracking-tight leading-tight" style={{ fontFamily: "'Playfair Display', serif" }}>{caseData.name}</h1>
               <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-bold uppercase tracking-wide">
                 <span>{caseData.client}</span>
-                <span>•</span>
+                <span className="text-border">·</span>
                 <span className="text-accent">{caseData.manager}</span>
               </div>
             </div>
@@ -560,6 +666,31 @@ export default function ProjectDetail() {
               <TabsTrigger value="discovery" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <Search className="mr-2 h-4 w-4" />
                 Discovery Chat
+              </TabsTrigger>
+              <TabsTrigger value="review" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <ListChecks className="mr-2 h-4 w-4" />
+                Review
+              </TabsTrigger>
+              <TabsTrigger value="addbacks" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <ClipboardList className="mr-2 h-4 w-4" />
+                Add-Backs
+              </TabsTrigger>
+              <TabsTrigger value="anomalies" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <AlertTriangle className="mr-2 h-4 w-4" />
+                Anomalies
+                {(caseData?.anomalyFlags?.filter((f: any) => f.status === 'OPEN').length ?? 0) > 0 && (
+                  <span className="ml-1.5 bg-destructive text-destructive-foreground text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                    {caseData.anomalyFlags.filter((f: any) => f.status === 'OPEN').length}
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="report" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <BookOpen className="mr-2 h-4 w-4" />
+                Report
+              </TabsTrigger>
+              <TabsTrigger value="audit" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                Audit Log
               </TabsTrigger>
             </TabsList>
 
@@ -1078,6 +1209,289 @@ export default function ProjectDetail() {
                     </CardContent>
                   </Card>
                 </div>
+              </div>
+            </TabsContent>
+            {/* ─── REVIEW TAB ──────────────────────────────────────────── */}
+            <TabsContent value="review">
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-black text-primary tracking-tight">AI Value Review</h2>
+                    <p className="text-sm text-muted-foreground font-medium">Accept, override, or reject each AI-extracted value.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    {(['ALL','PENDING','ACCEPTED','OVERRIDDEN','REJECTED'] as const).map(f => (
+                      <Button key={f} size="sm" variant={reviewFilter === f ? 'default' : 'outline'} onClick={() => setReviewFilter(f)} className="text-[10px] font-bold uppercase h-8">
+                        {f}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                {reviewedValues.length === 0 ? (
+                  <Card className="border-2 border-dashed py-16 text-center">
+                    <CardContent>
+                      <ListChecks className="h-10 w-10 mx-auto mb-4 text-muted-foreground/30" />
+                      <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">No values to review</p>
+                      <p className="text-xs text-muted-foreground mt-1">Run AI extraction first to populate values here.</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card className="border-none shadow-sm bg-white overflow-hidden">
+                    <CardContent className="p-0 overflow-x-auto">
+                      <Table>
+                        <TableHeader className="bg-muted/30">
+                          <TableRow>
+                            <TableHead className="text-[10px] uppercase font-bold tracking-widest">Statement</TableHead>
+                            <TableHead className="text-[10px] uppercase font-bold tracking-widest">Year</TableHead>
+                            <TableHead className="text-[10px] uppercase font-bold tracking-widest">Line Item</TableHead>
+                            <TableHead className="text-right text-[10px] uppercase font-bold tracking-widest">AI Value</TableHead>
+                            <TableHead className="text-right text-[10px] uppercase font-bold tracking-widest">Current Value</TableHead>
+                            <TableHead className="text-center text-[10px] uppercase font-bold tracking-widest">Confidence</TableHead>
+                            <TableHead className="text-right text-[10px] uppercase font-bold tracking-widest">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {reviewedValues.map((v: any) => (
+                            <TableRow key={v.id} className={cn(
+                              v.reviewStatus === 'ACCEPTED'   && 'bg-emerald-50/40',
+                              v.reviewStatus === 'OVERRIDDEN' && 'bg-amber-50/40',
+                              v.reviewStatus === 'REJECTED'   && 'bg-red-50/40',
+                            )}>
+                              <TableCell className="text-xs text-muted-foreground">{v.statementType}</TableCell>
+                              <TableCell className="text-xs font-mono">{v.year}</TableCell>
+                              <TableCell className="text-sm font-medium">{v.lineItem}</TableCell>
+                              <TableCell className="text-right font-mono text-sm">
+                                {v.aiSuggestedValue != null
+                                  ? v.aiSuggestedValue.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+                                  : '—'}
+                              </TableCell>
+                              <TableCell className="text-right font-mono text-sm font-bold text-primary">
+                                {v.value.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                <ConfidenceBadge
+                                  confidence={v.confidence}
+                                  reviewStatus={v.reviewStatus}
+                                  isLocked={v.isLocked}
+                                  sourceRef={v.sourceRef}
+                                />
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end gap-1">
+                                  {v.reviewStatus === 'PENDING' && (
+                                    <>
+                                      <Button size="icon" variant="ghost" className="h-7 w-7 text-emerald-600" title="Accept" onClick={() => handleAccept(v.id)}>
+                                        <CheckCheck className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button size="icon" variant="ghost" className="h-7 w-7 text-amber-600" title="Override" onClick={() => setOverrideTarget(v)}>
+                                        <Pencil className="h-3.5 w-3.5" />
+                                      </Button>
+                                      <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" title="Reject" onClick={() => handleReject(v.id)}>
+                                        <XCircle className="h-3.5 w-3.5" />
+                                      </Button>
+                                    </>
+                                  )}
+                                  <Button
+                                    size="icon" variant="ghost"
+                                    className={cn('h-7 w-7', v.isLocked ? 'text-primary' : 'text-muted-foreground')}
+                                    title={v.isLocked ? 'Unlock' : 'Lock'}
+                                    disabled={lockingId === v.id}
+                                    onClick={() => handleToggleLock(v.id)}
+                                  >
+                                    {lockingId === v.id
+                                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                                      : v.isLocked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                )}
+
+                <OverrideDialog
+                  open={!!overrideTarget}
+                  onOpenChange={open => { if (!open) setOverrideTarget(null) }}
+                  lineItem={overrideTarget?.lineItem ?? ''}
+                  currentValue={overrideTarget?.value ?? 0}
+                  aiValue={overrideTarget?.aiSuggestedValue}
+                  onConfirm={handleOverrideConfirm}
+                />
+              </div>
+            </TabsContent>
+
+            {/* ─── ADD-BACKS TAB ────────────────────────────────────────── */}
+            <TabsContent value="addbacks">
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-black text-primary tracking-tight">Normalization Add-Backs</h2>
+                  <p className="text-sm text-muted-foreground font-medium">Document and approve each normalization adjustment to derive representative earnings.</p>
+                </div>
+                <Card className="border-none shadow-sm bg-white overflow-hidden">
+                  <CardContent className="pt-6">
+                    <AddBackSchedule caseId={id as string} />
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
+
+            {/* ─── ANOMALIES TAB ────────────────────────────────────────── */}
+            <TabsContent value="anomalies">
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-black text-primary tracking-tight">Anomaly Detection</h2>
+                    <p className="text-sm text-muted-foreground font-medium">AI forensic scan for Benford's Law violations, outliers, margin shifts, and related-party indicators.</p>
+                  </div>
+                  <Button onClick={handleRunAnomalies} disabled={isRunningAnomalies} className="bg-primary font-bold uppercase text-xs h-11 px-8 shadow-lg">
+                    {isRunningAnomalies ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <AlertCircle className="mr-2 h-4 w-4" />}
+                    Run Forensic Scan
+                  </Button>
+                </div>
+
+                {!caseData?.anomalyFlags?.length ? (
+                  <Card className="border-2 border-dashed py-16 text-center">
+                    <CardContent>
+                      <AlertTriangle className="h-10 w-10 mx-auto mb-4 text-muted-foreground/30" />
+                      <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">No anomaly scans run</p>
+                      <p className="text-xs text-muted-foreground mt-1">Run the forensic scan to detect red flags.</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="space-y-3">
+                    {caseData.anomalyFlags.map((flag: any) => (
+                      <Card key={flag.id} className={cn(
+                        'border-l-4 border-none shadow-sm overflow-hidden',
+                        flag.severity === 'HIGH'   && 'border-l-red-500    bg-red-50/30',
+                        flag.severity === 'MEDIUM' && 'border-l-amber-400  bg-amber-50/30',
+                        flag.severity === 'LOW'    && 'border-l-slate-400  bg-white',
+                      )}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap mb-1">
+                                <Badge variant="secondary" className={cn(
+                                  'text-[10px] font-bold uppercase tracking-wide',
+                                  flag.severity === 'HIGH'   && 'bg-red-100    text-red-800',
+                                  flag.severity === 'MEDIUM' && 'bg-amber-100  text-amber-800',
+                                  flag.severity === 'LOW'    && 'bg-slate-100  text-slate-700',
+                                )}>
+                                  {flag.severity}
+                                </Badge>
+                                <Badge variant="outline" className="text-[10px] font-bold uppercase tracking-wide">
+                                  {flag.category?.replace(/_/g, ' ')}
+                                </Badge>
+                                {flag.status !== 'OPEN' && (
+                                  <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 text-[10px] font-bold">{flag.status}</Badge>
+                                )}
+                              </div>
+                              <p className="font-semibold text-sm text-primary">{flag.title}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{flag.description}</p>
+                              {flag.resolution && (
+                                <p className="text-xs text-emerald-700 mt-1 font-medium">Resolution: {flag.resolution}</p>
+                              )}
+                            </div>
+                            {flag.status === 'OPEN' && (
+                              <Button
+                                size="sm" variant="outline"
+                                className="shrink-0 text-[10px] font-bold uppercase h-8"
+                                onClick={() => handleResolveFlag(flag.id, 'Reviewed and cleared by analyst')}
+                              >
+                                Mark Resolved
+                              </Button>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+
+            {/* ─── REPORT TAB ───────────────────────────────────────────── */}
+            <TabsContent value="report">
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-black text-primary tracking-tight">Report Narratives</h2>
+                    <p className="text-sm text-muted-foreground font-medium">AI-drafted court-ready report sections. Edit and refine before submission.</p>
+                  </div>
+                  <Button onClick={handleRefreshInsights} disabled={isRefreshingInsights} variant="outline" className="text-xs font-bold uppercase h-10">
+                    {isRefreshingInsights ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Lightbulb className="mr-2 h-4 w-4" />}
+                    Refresh Insights
+                  </Button>
+                </div>
+
+                {caseData?.insights?.filter((i: any) => !i.isDismissed).length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {caseData.insights.filter((i: any) => !i.isDismissed).map((insight: any) => (
+                      <Card key={insight.id} className="border-none shadow-sm bg-primary/5 overflow-hidden">
+                        <CardContent className="p-4">
+                          <div className="flex items-start gap-2">
+                            <Lightbulb className="h-4 w-4 text-accent shrink-0 mt-0.5" />
+                            <div>
+                              <p className="text-xs font-bold text-primary">{insight.title}</p>
+                              <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{insight.body}</p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  {(['EXECUTIVE_SUMMARY','SUBJECT_COMPANY','INDUSTRY_OUTLOOK','FINANCIAL_ANALYSIS','NORMALIZATION','VALUATION_APPROACH','RECONCILIATION','LIMITING_CONDITIONS'] as const).map(section => (
+                    <Card key={section} className="border-none shadow-sm bg-white overflow-hidden">
+                      <CardHeader className="flex flex-row items-center justify-between border-b py-3 bg-muted/10">
+                        <CardTitle className="text-xs font-bold uppercase tracking-widest">{section.replace(/_/g, ' ')}</CardTitle>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-[10px] font-bold uppercase h-8"
+                          disabled={isDraftingSection === section}
+                          onClick={() => handleDraftSection(section)}
+                        >
+                          {isDraftingSection === section
+                            ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                            : <Sparkles className="mr-1.5 h-3.5 w-3.5 fill-accent text-accent" />}
+                          {draftedNarrative[section] ? 'Re-draft' : 'Draft'}
+                        </Button>
+                      </CardHeader>
+                      <CardContent className="p-4">
+                        {draftedNarrative[section] ? (
+                          <textarea
+                            className="w-full text-sm leading-relaxed text-slate-700 bg-transparent border-none outline-none resize-none min-h-[120px]"
+                            value={draftedNarrative[section]}
+                            onChange={e => setDraftedNarrative(prev => ({ ...prev, [section]: e.target.value }))}
+                          />
+                        ) : (
+                          <p className="text-xs text-muted-foreground italic">Click Draft to generate AI narrative for this section.</p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* ─── AUDIT LOG TAB ────────────────────────────────────────── */}
+            <TabsContent value="audit">
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-black text-primary tracking-tight">Audit Trail</h2>
+                  <p className="text-sm text-muted-foreground font-medium">Immutable chain-of-custody log for all case actions.</p>
+                </div>
+                <Card className="border-none shadow-sm bg-white overflow-hidden">
+                  <CardContent className="pt-6">
+                    <AuditLogPanel caseId={id as string} />
+                  </CardContent>
+                </Card>
               </div>
             </TabsContent>
           </Tabs>
