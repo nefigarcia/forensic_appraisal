@@ -1,232 +1,588 @@
-import { Button } from "@/components/ui/button"
-import { CheckCircle2, ShieldCheck, Zap, BarChart3, Search, FileText, ArrowRight, Globe } from "lucide-react"
-import Link from "next/link"
-import Image from "next/image"
+'use client'
+
+import { useEffect, useRef } from 'react'
+import Link from 'next/link'
+
+/* ─────────────────────────────────────────
+   Frame config
+───────────────────────────────────────── */
+const FRAME_COUNT = 192
+const FRAME_SPEED = 2.0
+const IMAGE_SCALE = 0.86
+
+function frameSrc(n: number) {
+  return `/landing/frames/frame_${String(n).padStart(4, '0')}.webp`
+}
 
 export default function LandingPage() {
-  const pricingTiers = [
-    {
-      name: "Solo Appraiser",
-      price: "$199",
-      description: "Perfect for independent forensic accountants handling single matters.",
-      features: [
-        "Up to 5 active forensic cases",
-        "AI Document Extraction",
-        "Standard Valuation Multiples",
-        "Secure Case Discovery Search",
-        "Email Support",
-      ],
-      buttonText: "Start Free Trial",
-      accent: false,
-    },
-    {
-      name: "Valuation Firm",
-      price: "$599",
-      description: "Complete workbench for growing appraisal and audit teams.",
-      features: [
-        "Unlimited active cases",
-        "Full Multi-tenant Team Access",
-        "Forensic Ledger Variance Radar",
-        "Direct IbisWorld/BVR API Sync",
-        "Priority 24/7 Support",
-        "Custom Branding & Watermarks",
-      ],
-      buttonText: "Get Started",
-      accent: true,
-    },
-    {
-      name: "Enterprise",
-      price: "Custom",
-      description: "Industrial strength for global large-scale forensic audit firms.",
-      features: [
-        "On-premise Database Connection",
-        "White-label Client Portals",
-        "Advanced SOC2 Compliance Logs",
-        "Dedicated Account Engineer",
-        "Unlimited Multi-tenant Orgs",
-        "API Data Lake Access",
-      ],
-      buttonText: "Contact Sales",
-      accent: false,
-    },
-  ]
+  /* refs ─ all DOM nodes the effect needs */
+  const loaderRef       = useRef<HTMLDivElement>(null)
+  const loaderBarRef    = useRef<HTMLDivElement>(null)
+  const loaderPctRef    = useRef<HTMLSpanElement>(null)
+  const headerRef       = useRef<HTMLElement>(null)
+  const heroRef         = useRef<HTMLElement>(null)
+  const canvasWrapRef   = useRef<HTMLDivElement>(null)
+  const canvasRef       = useRef<HTMLCanvasElement>(null)
+  const overlayRef      = useRef<HTMLDivElement>(null)
+  const marqueeRef      = useRef<HTMLDivElement>(null)
+  const marqueeTextRef  = useRef<HTMLDivElement>(null)
+  const scrollContRef   = useRef<HTMLDivElement>(null)
 
+  useEffect(() => {
+    /* import browser-only libs dynamically */
+    let lenis: import('lenis').default | null = null
+    let ST: { getAll: () => { kill: () => void }[] } | null = null
+    let killed = false
+
+    ;(async () => {
+      const { gsap }          = await import('gsap')
+      const { ScrollTrigger } = await import('gsap/ScrollTrigger')
+      ST = ScrollTrigger
+      const LenisModule        = await import('lenis')
+      const LenisClass         = LenisModule.default ?? (LenisModule as unknown as { default: typeof import('lenis').default }).default
+
+      if (killed) return
+      gsap.registerPlugin(ScrollTrigger)
+
+      const loader       = loaderRef.current!
+      const loaderBar    = loaderBarRef.current!
+      const loaderPct    = loaderPctRef.current!
+      const header       = headerRef.current!
+      const hero         = heroRef.current!
+      const canvasWrap   = canvasWrapRef.current!
+      const canvas       = canvasRef.current!
+      const overlay      = overlayRef.current!
+      const marqueeEl    = marqueeRef.current!
+      const marqueeText  = marqueeTextRef.current!
+      const scrollCont   = scrollContRef.current!
+      const ctx          = canvas.getContext('2d')!
+
+      /* ── frames store ── */
+      const frames: HTMLImageElement[] = new Array(FRAME_COUNT)
+      let   currentFrame = 0
+      let   bgColor      = '#070f24'
+
+      /* ── canvas setup ── */
+      function resizeCanvas() {
+        const dpr = window.devicePixelRatio || 1
+        const w   = window.innerWidth
+        const h   = window.innerHeight
+        canvas.width  = w * dpr
+        canvas.height = h * dpr
+        canvas.style.width  = w + 'px'
+        canvas.style.height = h + 'px'
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        if (frames[currentFrame]) drawFrame(currentFrame)
+      }
+
+      function sampleBgColor(img: HTMLImageElement) {
+        try {
+          const off = document.createElement('canvas')
+          off.width = 4; off.height = 4
+          const oc  = off.getContext('2d')!
+          oc.drawImage(img, 0, 0, 4, 4)
+          const d   = oc.getImageData(0, 0, 1, 1).data
+          bgColor   = `rgb(${d[0]},${d[1]},${d[2]})`
+        } catch { /* cross-origin guard */ }
+      }
+
+      function drawFrame(index: number) {
+        const img = frames[index]
+        if (!img?.complete) return
+        const cw  = window.innerWidth
+        const ch  = window.innerHeight
+        const iw  = img.naturalWidth  || 1280
+        const ih  = img.naturalHeight || 720
+        const sc  = Math.max(cw / iw, ch / ih) * IMAGE_SCALE
+        const dw  = iw * sc,  dh = ih * sc
+        const dx  = (cw - dw) / 2, dy = (ch - dh) / 2
+        ctx.fillStyle = bgColor
+        ctx.fillRect(0, 0, cw, ch)
+        ctx.drawImage(img, dx, dy, dw, dh)
+      }
+
+      resizeCanvas()
+      const onResize = () => resizeCanvas()
+      window.addEventListener('resize', onResize)
+
+      /* ── two-phase loader ── */
+      async function loadFrames() {
+        return new Promise<void>((resolve) => {
+          let loaded = 0
+          const tick = (img: HTMLImageElement, i: number) => {
+            frames[i] = img
+            loaded++
+            if (i % 20 === 0) sampleBgColor(img)
+            const pct = Math.round((loaded / FRAME_COUNT) * 100)
+            loaderBar.style.width  = pct + '%'
+            loaderPct.textContent  = pct + '%'
+            if (loaded === FRAME_COUNT) resolve()
+          }
+
+          const PHASE1 = Math.min(12, FRAME_COUNT)
+          for (let i = 1; i <= PHASE1; i++) {
+            const img = new Image()
+            const idx = i - 1
+            img.onload = () => tick(img, idx)
+            img.onerror = () => { loaded++; if (loaded === FRAME_COUNT) resolve() }
+            img.src = frameSrc(i)
+          }
+          setTimeout(() => {
+            for (let i = PHASE1 + 1; i <= FRAME_COUNT; i++) {
+              const img = new Image()
+              const idx = i - 1
+              img.onload = () => tick(img, idx)
+              img.onerror = () => { loaded++; if (loaded === FRAME_COUNT) resolve() }
+              img.src = frameSrc(i)
+            }
+          }, 80)
+        })
+      }
+
+      await loadFrames()
+      drawFrame(0)
+
+      /* ── hide loader ── */
+      await new Promise<void>((r) => setTimeout(r, 350))
+      loader.style.opacity    = '0'
+      loader.style.visibility = 'hidden'
+
+      /* ── Lenis smooth scroll ── */
+      lenis = new LenisClass({
+        duration: 1.2,
+        easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      })
+      lenis.on('scroll', ScrollTrigger.update)
+      gsap.ticker.add((time: number) => lenis!.raf(time * 1000))
+      gsap.ticker.lagSmoothing(0)
+
+      lenis.on('scroll', ({ scroll }: { scroll: number }) => {
+        if (scroll > 60) header.classList.add('scrolled')
+        else             header.classList.remove('scrolled')
+      })
+
+      /* ── hero word entrance ── */
+      const words    = hero.querySelectorAll<HTMLElement>('.word')
+      const heroLabel = hero.querySelector<HTMLElement>('.hero-label')
+      const heroTag   = hero.querySelector<HTMLElement>('.hero-tagline')
+      const heroCtas  = hero.querySelector<HTMLElement>('.hero-ctas')
+      const scrollHint = hero.querySelector<HTMLElement>('.hero-scroll-hint')
+
+      gsap.timeline({ defaults: { ease: 'power4.out' } })
+        .to(heroLabel,  { opacity: 1, y: 0, duration: 0.7 }, 0.1)
+        .to(words,      { opacity: 1, y: 0, duration: 0.9, stagger: 0.07 }, 0.2)
+        .to(heroTag,    { opacity: 1, y: 0, duration: 0.8 }, 0.65)
+        .to(heroCtas,   { opacity: 1, y: 0, duration: 0.7 }, 0.8)
+        .to(scrollHint, { opacity: 1, duration: 0.6 }, 1.1)
+
+      /* ── scroll-based helpers ── */
+      function scrollProgress(self: { progress: number }) {
+        return self.progress
+      }
+
+      const ST_BASE = {
+        trigger: scrollCont,
+        start: 'top top',
+        end: 'bottom bottom',
+        scrub: true,
+      }
+
+      /* ── circle-wipe + hero fade ── */
+      ScrollTrigger.create({
+        ...ST_BASE,
+        onUpdate(self) {
+          const p = self.progress
+          hero.style.opacity = String(Math.max(0, 1 - p * 14))
+          if (p > 0.08) hero.style.pointerEvents = 'none'
+          else          hero.style.pointerEvents = ''
+          const wp = Math.min(1, Math.max(0, (p - 0.01) / 0.07))
+          canvasWrap.style.clipPath = `circle(${wp * 80}% at 50% 50%)`
+        },
+      })
+
+      /* ── frame scrub ── */
+      ScrollTrigger.create({
+        ...ST_BASE,
+        onUpdate(self) {
+          const acc   = Math.min(self.progress * FRAME_SPEED, 1)
+          const index = Math.min(Math.floor(acc * FRAME_COUNT), FRAME_COUNT - 1)
+          if (index !== currentFrame) {
+            currentFrame = index
+            requestAnimationFrame(() => drawFrame(currentFrame))
+          }
+        },
+      })
+
+      /* ── dark overlay ── */
+      const OVR_IN = 0.58, OVR_OUT = 0.82, OFR = 0.04
+      ScrollTrigger.create({
+        ...ST_BASE,
+        onUpdate(self) {
+          const p = self.progress
+          let op = 0
+          if (p >= OVR_IN - OFR && p <= OVR_IN)          op = (p - (OVR_IN - OFR)) / OFR
+          else if (p > OVR_IN && p < OVR_OUT)             op = 0.91
+          else if (p >= OVR_OUT && p <= OVR_OUT + OFR)    op = 0.91 * (1 - (p - OVR_OUT) / OFR)
+          overlay.style.opacity = String(op)
+        },
+      })
+
+      /* ── marquee ── */
+      const MQ_ENTER = 0.16, MQ_LEAVE = 0.96, MFR = 0.05
+      gsap.to(marqueeText, {
+        xPercent: -20,
+        ease: 'none',
+        scrollTrigger: { ...ST_BASE },
+      })
+      ScrollTrigger.create({
+        ...ST_BASE,
+        onUpdate(self) {
+          const p = self.progress
+          let op = 0
+          if      (p >= MQ_ENTER && p < MQ_ENTER + MFR)        op = (p - MQ_ENTER) / MFR
+          else if (p >= MQ_ENTER + MFR && p < MQ_LEAVE - MFR)  op = 1
+          else if (p >= MQ_LEAVE - MFR && p <= MQ_LEAVE)        op = 1 - (p - (MQ_LEAVE - MFR)) / MFR
+          marqueeEl.style.opacity = String(op)
+        },
+      })
+
+      /* ── position sections ── */
+      function positionSections() {
+        const totalH = scrollCont.offsetHeight
+        scrollCont.querySelectorAll<HTMLElement>('.scroll-section').forEach((sec) => {
+          const enter  = parseFloat(sec.dataset.enter!) / 100
+          const leave  = parseFloat(sec.dataset.leave!) / 100
+          const mid    = ((enter + leave) / 2) * totalH
+          sec.style.top       = mid + 'px'
+          sec.style.transform = 'translateY(-50%)'
+        })
+      }
+      positionSections()
+      window.addEventListener('resize', positionSections)
+
+      /* ── section animations ── */
+      type AnimType = 'fade-up'|'slide-left'|'slide-right'|'scale-up'|'rotate-in'|'stagger-up'|'clip-reveal'
+
+      function initStates(type: AnimType, els: Element[]) {
+        const map: Record<AnimType, gsap.TweenVars> = {
+          'fade-up':     { y: 45, opacity: 0 },
+          'slide-left':  { x: -70, opacity: 0 },
+          'slide-right': { x: 70, opacity: 0 },
+          'scale-up':    { scale: 0.88, opacity: 0 },
+          'rotate-in':   { y: 40, rotation: 3, opacity: 0 },
+          'stagger-up':  { y: 55, opacity: 0 },
+          'clip-reveal': { clipPath: 'inset(100% 0 0 0)', opacity: 0 },
+        }
+        gsap.set(els, map[type] ?? { y: 45, opacity: 0 })
+      }
+
+      function buildTl(type: AnimType, els: Element[]) {
+        const tl = gsap.timeline({ paused: true })
+        const base = { stagger: 0.13, duration: 0.9, ease: 'power3.out' }
+        switch (type) {
+          case 'slide-left':  tl.to(els, { x: 0,        opacity: 1, ...base }); break
+          case 'slide-right': tl.to(els, { x: 0,        opacity: 1, ...base }); break
+          case 'scale-up':    tl.to(els, { scale: 1,    opacity: 1, ...base, duration: 1.0, ease: 'power2.out' }); break
+          case 'rotate-in':   tl.to(els, { y: 0, rotation: 0, opacity: 1, ...base }); break
+          case 'stagger-up':  tl.to(els, { y: 0,        opacity: 1, ...base, duration: 0.85 }); break
+          case 'clip-reveal': tl.to(els, { clipPath: 'inset(0% 0 0 0)', opacity: 1, ...base, duration: 1.2, ease: 'power4.inOut' }); break
+          default:            tl.to(els, { y: 0,        opacity: 1, ...base })
+        }
+        return tl
+      }
+
+      scrollCont.querySelectorAll<HTMLElement>('.scroll-section').forEach((sec) => {
+        const type    = (sec.dataset.animation ?? 'fade-up') as AnimType
+        const persist = sec.dataset.persist === 'true'
+        const enter   = parseFloat(sec.dataset.enter!) / 100
+        const leave   = parseFloat(sec.dataset.leave!) / 100
+        const kids    = [
+          ...Array.from(sec.querySelectorAll('.section-label')),
+          ...Array.from(sec.querySelectorAll('.section-heading')),
+          ...Array.from(sec.querySelectorAll('.section-body')),
+          ...Array.from(sec.querySelectorAll('.section-cta')),
+          ...Array.from(sec.querySelectorAll('.cta-buttons')),
+          ...Array.from(sec.querySelectorAll('.cta-trust')),
+          ...Array.from(sec.querySelectorAll('.stat')),
+        ]
+        if (!kids.length) return
+        initStates(type, kids)
+        const tl = buildTl(type, kids)
+
+        ScrollTrigger.create({
+          ...ST_BASE,
+          onUpdate(self) {
+            const p = self.progress
+            if (p >= enter && p <= leave) {
+              sec.style.opacity       = '1'
+              sec.style.pointerEvents = 'auto'
+              const inner = Math.min((p - enter) / (leave - enter) * 2.5, 1)
+              tl.progress(inner)
+            } else if (persist && p > leave) {
+              sec.style.opacity = '1'
+              tl.progress(1)
+            } else {
+              sec.style.opacity       = '0'
+              sec.style.pointerEvents = 'none'
+              tl.progress(0)
+            }
+          },
+        })
+      })
+
+      /* ── counters ── */
+      scrollCont.querySelectorAll<HTMLElement>('.stat-number').forEach((el) => {
+        const target   = parseFloat(el.dataset.value ?? '0')
+        const decimals = parseInt(el.dataset.decimals ?? '0')
+        gsap.fromTo(el,
+          { textContent: 0 },
+          {
+            textContent: target,
+            duration: 2.2,
+            ease: 'power1.out',
+            snap: { textContent: decimals === 0 ? 1 : Math.pow(10, -decimals) },
+            scrollTrigger: {
+              trigger: el.closest<HTMLElement>('.scroll-section'),
+              start: 'top 70%',
+              toggleActions: 'play none none reverse',
+            },
+            onUpdate() {
+              const v = parseFloat(el.textContent ?? '0')
+              el.textContent = decimals > 0 ? v.toFixed(decimals) : String(Math.round(v))
+            },
+          },
+        )
+      })
+
+      ScrollTrigger.refresh()
+
+      return () => {
+        /* cleanup on unmount */
+        window.removeEventListener('resize', onResize)
+        window.removeEventListener('resize', positionSections)
+      }
+    })()
+
+    return () => { killed = true; lenis?.destroy(); ST?.getAll().forEach(t => t.kill()) }
+  }, [])
+
+  /* ────────────────────────────────────────
+     JSX
+  ──────────────────────────────────────── */
   return (
-    <div className="flex flex-col min-h-screen bg-white">
-      <header className="flex h-20 items-center justify-between px-6 lg:px-12 border-b sticky top-0 bg-white/80 backdrop-blur-md z-50">
-        <div className="flex items-center gap-2">
-          <div className="bg-primary p-1.5 rounded-lg">
-            <ShieldCheck className="h-6 w-6 text-white" />
+    <div style={{ background: '#070f24' }}>
+
+      {/* ── Loader ── */}
+      <div ref={loaderRef} style={{
+        position: 'fixed', inset: 0, background: '#070f24', zIndex: 9999,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        transition: 'opacity 0.6s ease, visibility 0.6s',
+      }}>
+        <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 700, color: '#FDFCFA' }}>
+            <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
+              <rect width="28" height="28" rx="6" fill="#0B2046"/>
+              <path d="M7 14L12 19L21 10" stroke="#F0A80E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            ValuVault <em style={{ color: '#F0A80E' }}>AI</em>
           </div>
-          <span className="text-xl font-bold font-headline tracking-tighter text-primary">ValuVault AI</span>
+          <div style={{ width: 200, height: 2, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+            <div ref={loaderBarRef} style={{ height: '100%', width: '0%', background: 'linear-gradient(90deg,#F0A80E,#ffd45e)', transition: 'width 0.1s linear' }} />
+          </div>
+          <span ref={loaderPctRef} style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(253,252,250,0.4)' }}>0%</span>
         </div>
-        <nav className="hidden md:flex items-center gap-8 text-sm font-semibold uppercase tracking-widest text-muted-foreground">
-          <a href="#features" className="hover:text-primary transition-colors">Modules</a>
-          <a href="#pricing" className="hover:text-primary transition-colors">Pricing</a>
-          <a href="#docs" className="hover:text-primary transition-colors">Security</a>
+      </div>
+
+      {/* ── Header ── */}
+      <header ref={headerRef} id="site-header" className="lp-header">
+        <nav className="lp-nav">
+          <a href="/" className="lp-logo">
+            <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
+              <rect width="28" height="28" rx="6" fill="#0B2046"/>
+              <path d="M7 14L12 19L21 10" stroke="#F0A80E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            ValuVault <em>AI</em>
+          </a>
+          <div className="lp-nav-links">
+            <a href="#scroll-container">Modules</a>
+            <a href="#scroll-container">Workflow</a>
+            <a href="#scroll-container">Pricing</a>
+            <a href="#scroll-container">Security</a>
+          </div>
+          <div className="lp-nav-ctas">
+            <Link href="/dashboard" className="lp-btn-ghost">Sign In</Link>
+            <Link href="/dashboard" className="lp-btn-primary">Book Demo</Link>
+          </div>
         </nav>
-        <div className="flex items-center gap-4">
-          <Link href="/dashboard">
-            <Button variant="ghost" className="font-bold uppercase text-xs tracking-widest">Sign In</Button>
-          </Link>
-          <Link href="/dashboard">
-            <Button className="bg-primary font-bold uppercase text-xs tracking-widest shadow-lg px-6">Book Demo</Button>
-          </Link>
-        </div>
       </header>
 
-      <main className="flex-1">
-        <section className="py-24 px-6 lg:px-12 max-w-7xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-accent/10 border border-accent/20 text-accent text-[10px] font-bold uppercase tracking-widest mb-8">
-            <Zap className="h-3.5 w-3.5 fill-accent" />
-            Vertical SaaS for Forensic Accounting
-          </div>
-          <h1 className="text-5xl lg:text-7xl font-extrabold font-headline tracking-tighter text-primary leading-[1.1] mb-8">
-            The AI-First Workbench for <br />
-            <span className="text-accent italic">Valuation Specialists</span>
+      {/* ── Hero ── */}
+      <section ref={heroRef} className="lp-hero">
+        <div className="lp-hero-grid" />
+        <div className="lp-hero-content">
+          <span className="section-label hero-label lp-hero-label">001 / Forensic Intelligence</span>
+          <h1 className="lp-hero-heading">
+            <span className="word">The</span>
+            <span className="word">AI</span>
+            <span className="word lp-accent">Workbench</span>
+            <span className="word">for</span>
+            <span className="word">Forensic</span>
+            <span className="word lp-accent">Appraisal</span>
           </h1>
-          <p className="text-xl text-muted-foreground max-w-2xl mx-auto font-medium mb-12">
-            Automate Module 4-10. From OCR extraction to court-ready valuation reports in one secure, multi-tenant ecosystem.
-          </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link href="/dashboard">
-              <Button className="h-16 px-10 text-lg font-bold uppercase tracking-widest bg-primary hover:bg-primary/90 shadow-2xl">
-                Open Case Manager
-                <ArrowRight className="ml-2 h-5 w-5" />
-              </Button>
-            </Link>
-            <Button variant="outline" className="h-16 px-10 text-lg font-bold uppercase tracking-widest border-2">
-              Watch Module Overview
-            </Button>
-          </div>
-          <div className="mt-20 relative rounded-3xl overflow-hidden border-8 border-muted shadow-2xl">
-             <Image 
-              src="https://picsum.photos/seed/valuvault-hero/1200/600" 
-              alt="Forensic Dashboard" 
-              width={1200} 
-              height={600}
-              className="w-full object-cover"
-              data-ai-hint="finance dashboard"
-            />
-          </div>
-        </section>
-
-        <section id="features" className="py-24 bg-muted/30 px-6 lg:px-12">
-          <div className="max-w-7xl mx-auto text-center mb-16">
-            <h2 className="text-3xl font-bold font-headline text-primary uppercase tracking-widest mb-4">Core Modules</h2>
-            <p className="text-muted-foreground font-medium">Built for the high-stakes requirements of forensic appraisal specialists.</p>
-          </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-7xl mx-auto">
-            {[
-              { icon: Briefcase, title: "Module 2: Case Management", desc: "Matter-level organization for multi-tenant environments with secure audit status." },
-              { icon: FileText, title: "Module 4: AI Extraction", desc: "Intelligent financial document parsing with structured JSON output for messiest PDFs." },
-              { icon: BarChart3, title: "Module 5: Forensic Ledger", desc: "Automated YOY financial normalization with variance tracking and anomaly detection." },
-              { icon: Globe, title: "Module 6: Industry AI", desc: "Automatic NAICS/SIC determination linked to BVR and IbisWorld datasets." },
-              { icon: Search, title: "Module 9: AI Assistant", desc: "Natural language discovery across matter binders. 'Show me all distributions over 50k'." },
-              { icon: ShieldCheck, title: "Module 10: Report Gen", desc: "One-click court-ready report generation with chain-of-custody verification logs." },
-            ].map((f, i) => (
-              <div key={i} className="p-10 rounded-3xl bg-white border border-border/50 shadow-sm hover:shadow-xl transition-all group">
-                <div className="bg-primary/5 p-4 rounded-2xl w-fit mb-6 group-hover:bg-primary transition-colors">
-                  <f.icon className="h-6 w-6 text-primary group-hover:text-white transition-colors" />
-                </div>
-                <h3 className="text-xl font-bold text-primary mb-3">{f.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed font-medium">{f.desc}</p>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section id="pricing" className="py-32 px-6 lg:px-12 max-w-7xl mx-auto">
-          <div className="text-center mb-20">
-            <h2 className="text-4xl font-bold font-headline text-primary tracking-tight mb-4">Professional Pricing</h2>
-            <p className="text-muted-foreground font-medium">Choose the engagement level that matches your practice.</p>
-          </div>
-          <div className="grid md:grid-cols-3 gap-8">
-            {pricingTiers.map((tier) => (
-              <div key={tier.name} className={`relative p-10 rounded-3xl border transition-all ${
-                tier.accent ? 'bg-primary text-white border-primary shadow-2xl scale-105 z-10' : 'bg-white border-border shadow-sm hover:border-primary/30'
-              }`}>
-                {tier.accent && (
-                  <div className="absolute top-0 right-0 m-6 bg-accent text-white text-[10px] font-black uppercase px-4 py-1 rounded-full shadow-lg">
-                    Firm Standard
-                  </div>
-                )}
-                <h3 className="text-xl font-bold uppercase tracking-widest mb-2">{tier.name}</h3>
-                <div className="flex items-baseline gap-1 mb-6">
-                  <span className="text-5xl font-black">{tier.price}</span>
-                  {tier.price !== 'Custom' && <span className="text-sm font-bold opacity-70 uppercase tracking-widest">/mo</span>}
-                </div>
-                <p className={`text-sm mb-8 font-medium ${tier.accent ? 'text-white/70' : 'text-muted-foreground'}`}>
-                  {tier.description}
-                </p>
-                <div className="space-y-4 mb-10">
-                  {tier.features.map((f) => (
-                    <div key={f} className="flex items-center gap-3">
-                      <CheckCircle2 className={`h-5 w-5 ${tier.accent ? 'text-accent' : 'text-primary'}`} />
-                      <span className="text-sm font-bold tracking-tight">{f}</span>
-                    </div>
-                  ))}
-                </div>
-                <Link href="/dashboard" className="block">
-                  <Button className={`w-full h-14 font-black uppercase tracking-widest text-xs rounded-xl ${
-                    tier.accent ? 'bg-accent hover:bg-accent/90 text-white shadow-xl' : 'bg-primary text-white shadow-md'
-                  }`}>
-                    {tier.buttonText}
-                  </Button>
-                </Link>
-              </div>
-            ))}
-          </div>
-        </section>
-      </main>
-
-      <footer className="bg-primary py-20 px-6 lg:px-12 text-white border-t border-white/10">
-        <div className="max-w-7xl mx-auto grid md:grid-cols-4 gap-12">
-          <div className="space-y-6">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="h-6 w-6 text-accent" />
-              <span className="text-xl font-bold uppercase tracking-tighter">ValuVault AI</span>
-            </div>
-            <p className="text-sm text-white/50 leading-relaxed font-medium">
-              Enterprise-grade forensic intelligence. Built to automate the Module 1-10 pipeline for appraisal specialists.
-            </p>
-          </div>
-          <div>
-            <h4 className="text-xs font-black uppercase tracking-widest mb-6 opacity-40">Software</h4>
-            <ul className="space-y-4 text-sm font-bold">
-              <li><Link href="/dashboard" className="hover:text-accent transition-colors">Forensic Workbench</Link></li>
-              <li><Link href="/dashboard" className="hover:text-accent transition-colors">Case Management</Link></li>
-              <li><Link href="/dashboard" className="hover:text-accent transition-colors">AI Discovery</Link></li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="text-xs font-black uppercase tracking-widest mb-6 opacity-40">Resources</h4>
-            <ul className="space-y-4 text-sm font-bold">
-              <li><a href="#" className="hover:text-accent transition-colors">NAICS Integration</a></li>
-              <li><a href="#" className="hover:text-accent transition-colors">BVR Connectors</a></li>
-              <li><a href="#" className="hover:text-accent transition-colors">Knowledge Base</a></li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="text-xs font-black uppercase tracking-widest mb-6 opacity-40">Contact</h4>
-            <ul className="space-y-4 text-sm font-bold">
-              <li>forensic@valuvault.ai</li>
-              <li>1-800-VALU-AI</li>
-              <li>Appraisal Center, NY</li>
-            </ul>
+          <p className="hero-tagline lp-hero-tag">From messy documents to court-ready valuation reports — automated, defensible, precise.</p>
+          <div className="hero-ctas lp-hero-ctas">
+            <Link href="/dashboard" className="lp-btn-gold">Open Case Manager <span>→</span></Link>
+            <a href="#scroll-container" className="lp-btn-outline">Explore Platform ↓</a>
           </div>
         </div>
-        <div className="max-w-7xl mx-auto mt-20 pt-10 border-t border-white/10 flex flex-col md:flex-row justify-between items-center gap-6 text-[10px] font-black uppercase tracking-[0.2em] opacity-40">
+        <div className="hero-scroll-hint lp-scroll-hint">
+          <div className="lp-scroll-line" />
+          <span>Scroll to explore</span>
+        </div>
+      </section>
+
+      {/* ── Canvas ── */}
+      <div ref={canvasWrapRef} className="lp-canvas-wrap">
+        <canvas ref={canvasRef} id="canvas" />
+      </div>
+
+      {/* ── Dark overlay ── */}
+      <div ref={overlayRef} className="lp-overlay" />
+
+      {/* ── Marquee ── */}
+      <div ref={marqueeRef} className="lp-marquee-wrap">
+        <div ref={marqueeTextRef} className="lp-marquee-text">
+          Forensic Appraisal &nbsp;·&nbsp; Litigation Support &nbsp;·&nbsp; AI Extraction &nbsp;·&nbsp; Court-Ready Reports &nbsp;·&nbsp;
+          SOC2 Compliant &nbsp;·&nbsp; Valuation Intelligence &nbsp;·&nbsp; Expert Witness Ready &nbsp;·&nbsp;
+          Forensic Appraisal &nbsp;·&nbsp; Litigation Support &nbsp;·&nbsp; AI Extraction &nbsp;·&nbsp; Court-Ready Reports &nbsp;·&nbsp;
+        </div>
+      </div>
+
+      {/* ── Scroll Container ── */}
+      <div ref={scrollContRef} id="scroll-container" className="lp-scroll-container">
+
+        {/* 002 · AI Extraction */}
+        <section className="scroll-section lp-section lp-align-left"
+          data-enter="22" data-leave="36" data-animation="slide-left">
+          <div className="lp-section-inner">
+            <span className="section-label">002 / AI Extraction</span>
+            <h2 className="section-heading">Turn Any Document Into Structured Data</h2>
+            <p className="section-body">Upload tax returns, P&amp;Ls, bank statements, or QuickBooks exports. The AI extraction engine parses and validates financial data — even from the messiest scanned exhibits.</p>
+            <a href="/dashboard" className="section-cta lp-cta-link">Explore Module 4 →</a>
+          </div>
+        </section>
+
+        {/* 003 · Forensic Ledger */}
+        <section className="scroll-section lp-section lp-align-right"
+          data-enter="38" data-leave="52" data-animation="slide-right">
+          <div className="lp-section-inner">
+            <span className="section-label">003 / Forensic Ledger</span>
+            <h2 className="section-heading">Automated YOY Normalization &amp; Variance Radar</h2>
+            <p className="section-body">The Forensic Ledger normalizes multi-year financials, surfaces owner add-backs, and flags statistical anomalies — giving you defensible working papers in minutes.</p>
+            <a href="/dashboard" className="section-cta lp-cta-link">Explore Module 5 →</a>
+          </div>
+        </section>
+
+        {/* 004 · Industry Benchmarks */}
+        <section className="scroll-section lp-section lp-align-left"
+          data-enter="48" data-leave="62" data-animation="fade-up">
+          <div className="lp-section-inner">
+            <span className="section-label">004 / Industry Intelligence</span>
+            <h2 className="section-heading">Live IbisWorld &amp; BVR Benchmarks</h2>
+            <p className="section-body">Automatic NAICS/SIC classification linked to real-time BVR and IbisWorld datasets. Industry multiples, risk factors, and comp transaction data — pulled, cited, and ready for your report.</p>
+            <a href="/dashboard" className="section-cta lp-cta-link">Explore Module 6 →</a>
+          </div>
+        </section>
+
+        {/* 005 · Stats */}
+        <section className="scroll-section lp-section lp-stats-section"
+          data-enter="62" data-leave="78" data-animation="stagger-up">
+          <div className="lp-stats-grid">
+            {[
+              { value: '500', decimals: '0', suffix: '+', label: 'Active Firms' },
+              { value: '4.2', decimals: '1', suffix: 'B',  label: 'Matters Managed' },
+              { value: '99.8', decimals: '1', suffix: '%', label: 'Extraction Accuracy' },
+              { value: '72',  decimals: '0', suffix: 'hrs', label: 'Saved Per Case' },
+            ].map((s) => (
+              <div key={s.label} className="stat">
+                <span className="stat-number" data-value={s.value} data-decimals={s.decimals}>0</span>
+                <span className="lp-stat-suffix">{s.suffix}</span>
+                <span className="lp-stat-label">{s.label}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* 006 · Reports */}
+        <section className="scroll-section lp-section lp-align-right"
+          data-enter="76" data-leave="90" data-animation="scale-up">
+          <div className="lp-section-inner">
+            <span className="section-label">005 / Report Generation</span>
+            <h2 className="section-heading">One Click. Court-Ready Output.</h2>
+            <p className="section-body">Generate fully-documented valuation reports with embedded methodology, NAICS citations, and chain-of-custody audit logs. Every export is SOC2 timestamped and expert-witness ready.</p>
+            <a href="/dashboard" className="section-cta lp-cta-link">Explore Module 10 →</a>
+          </div>
+        </section>
+
+        {/* 007 · CTA */}
+        <section className="scroll-section lp-section lp-align-right"
+          data-enter="88" data-leave="100" data-animation="fade-up" data-persist="true">
+          <div className="lp-section-inner">
+            <span className="section-label">006 / Get Started</span>
+            <h2 className="section-heading lp-cta-heading">Ready to Eliminate the Manual Grind?</h2>
+            <p className="section-body">Join 500+ forensic appraisal specialists who use ValuVault AI to deliver faster, more defensible engagements.</p>
+            <div className="cta-buttons lp-cta-buttons">
+              <Link href="/dashboard" className="lp-btn-gold section-cta">Start Free Trial →</Link>
+              <Link href="/dashboard" className="lp-btn-outline-dark section-cta">Book a Demo</Link>
+            </div>
+            <div className="cta-trust lp-trust">
+              <span>SOC2 Type II</span><span>·</span>
+              <span>256-bit Encryption</span><span>·</span>
+              <span>NACVA / ASA Aligned</span>
+            </div>
+          </div>
+        </section>
+
+      </div>{/* /#scroll-container */}
+
+      {/* ── Footer ── */}
+      <footer className="lp-footer">
+        <div className="lp-footer-inner">
+          <div className="lp-footer-brand">
+            <div className="lp-footer-logo">
+              <svg width="20" height="20" viewBox="0 0 28 28" fill="none">
+                <rect width="28" height="28" rx="6" fill="#0B2046"/>
+                <path d="M7 14L12 19L21 10" stroke="#F0A80E" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              ValuVault <em>AI</em>
+            </div>
+            <p>Enterprise-grade forensic intelligence. Automating the Module 1–10 pipeline for appraisal specialists worldwide.</p>
+          </div>
+          {[
+            { title: 'Platform',     links: [['Forensic Workbench','/dashboard'],['Case Management','/dashboard'],['AI Discovery','/dashboard']] },
+            { title: 'Integrations', links: [['IbisWorld / BVR','#'],['NAICS / SIC Lookup','#'],['QuickBooks Export','#']] },
+            { title: 'Contact',      links: [['forensic@valuvault.ai',''],['1-800-VALU-AI',''],['Appraisal Center, NY','']] },
+          ].map((col) => (
+            <div key={col.title} className="lp-footer-col">
+              <h4>{col.title}</h4>
+              <ul>
+                {col.links.map(([label, href]) => (
+                  <li key={label}>{href ? <a href={href}>{label}</a> : label}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+        <div className="lp-footer-bottom">
           <span>© 2024 ValuVault Technologies Inc.</span>
-          <div className="flex gap-8">
+          <div>
             <a href="#">Security Protocol</a>
             <a href="#">Privacy Policy</a>
             <a href="#">Audit Logs</a>
           </div>
         </div>
       </footer>
+
     </div>
   )
 }
-
-import { Briefcase } from "lucide-react"

@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ValuVault AI | Forensic Appraisal Workbench</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,700;0,900;1,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <!-- ══ LOADER ══ -->
+  <div id="loader">
+    <div class="loader-inner">
+      <div class="loader-logo">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <rect width="28" height="28" rx="6" fill="#0B2046"/>
+          <path d="M7 14L12 19L21 10" stroke="#F0A80E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>ValuVault <em>AI</em></span>
+      </div>
+      <div id="loader-bar-wrap"><div id="loader-bar"></div></div>
+      <div id="loader-percent">0%</div>
+    </div>
+  </div>
+
+  <!-- ══ HEADER ══ -->
+  <header class="site-header" id="site-header">
+    <nav>
+      <a href="#" class="nav-logo">
+        <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
+          <rect width="28" height="28" rx="6" fill="#0B2046"/>
+          <path d="M7 14L12 19L21 10" stroke="#F0A80E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        ValuVault <em>AI</em>
+      </a>
+      <div class="nav-links">
+        <a href="#scroll-container">Modules</a>
+        <a href="#scroll-container">Workflow</a>
+        <a href="#scroll-container">Pricing</a>
+        <a href="#scroll-container">Security</a>
+      </div>
+      <div class="nav-ctas">
+        <a href="/dashboard" class="btn-ghost">Sign In</a>
+        <a href="/dashboard" class="btn-primary">Book Demo</a>
+      </div>
+    </nav>
+  </header>
+
+  <!-- ══ HERO (standalone 100vh) ══ -->
+  <section class="hero-standalone" id="hero">
+    <div class="hero-bg-grid"></div>
+    <div class="hero-content">
+      <div class="section-label hero-label">001 / Forensic Intelligence</div>
+      <h1 class="hero-heading">
+        <span class="word">The</span>
+        <span class="word">AI</span>
+        <span class="word accent-word">Workbench</span>
+        <span class="word">for</span>
+        <span class="word">Forensic</span>
+        <span class="word accent-word">Appraisal</span>
+      </h1>
+      <p class="hero-tagline">From messy documents to court-ready valuation reports — automated, defensible, precise.</p>
+      <div class="hero-ctas">
+        <a href="/dashboard" class="btn-gold">Open Case Manager <span class="arrow">→</span></a>
+        <a href="#scroll-container" class="btn-outline-light">Explore Platform ↓</a>
+      </div>
+    </div>
+    <div class="hero-scroll-hint">
+      <div class="scroll-line"></div>
+      <span>Scroll to explore</span>
+    </div>
+  </section>
+
+  <!-- ══ CANVAS (fixed, revealed by circle-wipe) ══ -->
+  <div class="canvas-wrap" id="canvas-wrap">
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <!-- ══ DARK OVERLAY (for stats section) ══ -->
+  <div id="dark-overlay"></div>
+
+  <!-- ══ MARQUEE ══ -->
+  <div class="marquee-wrap" id="marquee-1" data-scroll-speed="-20">
+    <div class="marquee-text">
+      Forensic Appraisal &nbsp;·&nbsp; Litigation Support &nbsp;·&nbsp; AI Extraction &nbsp;·&nbsp; Court-Ready Reports &nbsp;·&nbsp;
+      SOC2 Compliant &nbsp;·&nbsp; Valuation Intelligence &nbsp;·&nbsp; Expert Witness Ready &nbsp;·&nbsp;
+      Forensic Appraisal &nbsp;·&nbsp; Litigation Support &nbsp;·&nbsp; AI Extraction &nbsp;·&nbsp; Court-Ready Reports &nbsp;·&nbsp;
+    </div>
+  </div>
+
+  <!-- ══ SCROLL CONTAINER ══ -->
+  <div id="scroll-container">
+
+    <!-- 001 · Document Extraction (22–36%) -->
+    <section class="scroll-section section-content align-left"
+             data-enter="22" data-leave="36" data-animation="slide-left">
+      <div class="section-inner">
+        <span class="section-label">002 / AI Extraction</span>
+        <h2 class="section-heading">Turn Any Document Into Structured Data</h2>
+        <p class="section-body">Upload tax returns, P&amp;Ls, bank statements, or QuickBooks exports. The AI extraction engine parses, structures, and validates financial data — even from the messiest scanned exhibits.</p>
+        <a href="/dashboard" class="section-cta">Explore Module 4 →</a>
+      </div>
+    </section>
+
+    <!-- 002 · Forensic Ledger (38–52%) -->
+    <section class="scroll-section section-content align-right"
+             data-enter="38" data-leave="52" data-animation="slide-right">
+      <div class="section-inner">
+        <span class="section-label">003 / Forensic Ledger</span>
+        <h2 class="section-heading">Automated YOY Normalization &amp; Variance Radar</h2>
+        <p class="section-body">The Forensic Ledger automatically normalizes multi-year financials, surfaces owner add-backs, and flags statistical anomalies — giving you defensible, court-ready working papers in minutes.</p>
+        <a href="/dashboard" class="section-cta">Explore Module 5 →</a>
+      </div>
+    </section>
+
+    <!-- 003 · Industry Benchmarks (48–62%) -->
+    <section class="scroll-section section-content align-left"
+             data-enter="48" data-leave="62" data-animation="fade-up">
+      <div class="section-inner">
+        <span class="section-label">004 / Industry Intelligence</span>
+        <h2 class="section-heading">Live IbisWorld &amp; BVR Benchmarks</h2>
+        <p class="section-body">Automatic NAICS/SIC classification linked to real-time BVR and IbisWorld datasets. Industry multiples, risk factors, and comp transaction data — pulled, cited, and ready for your report.</p>
+        <a href="/dashboard" class="section-cta">Explore Module 6 →</a>
+      </div>
+    </section>
+
+    <!-- 004 · Stats (62–78%) — full dark overlay -->
+    <section class="scroll-section section-stats"
+             data-enter="62" data-leave="78" data-animation="stagger-up"
+             data-overlay-enter="60" data-overlay-leave="80">
+      <div class="stats-grid">
+        <div class="stat">
+          <span class="stat-number" data-value="500" data-decimals="0">0</span>
+          <span class="stat-suffix">+</span>
+          <span class="stat-label">Active Firms</span>
+        </div>
+        <div class="stat">
+          <span class="stat-number" data-value="4.2" data-decimals="1">0</span>
+          <span class="stat-suffix">B</span>
+          <span class="stat-label">Matters Managed</span>
+        </div>
+        <div class="stat">
+          <span class="stat-number" data-value="99.8" data-decimals="1">0</span>
+          <span class="stat-suffix">%</span>
+          <span class="stat-label">Extraction Accuracy</span>
+        </div>
+        <div class="stat">
+          <span class="stat-number" data-value="72" data-decimals="0">0</span>
+          <span class="stat-suffix">hrs</span>
+          <span class="stat-label">Saved Per Case</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 005 · Reports (76–88%) -->
+    <section class="scroll-section section-content align-right"
+             data-enter="76" data-leave="90" data-animation="scale-up">
+      <div class="section-inner">
+        <span class="section-label">005 / Report Generation</span>
+        <h2 class="section-heading">One Click. Court-Ready Output.</h2>
+        <p class="section-body">Generate fully-documented valuation reports with embedded methodology, NAICS citations, and chain-of-custody audit logs. Every export is SOC2 timestamped and expert-witness ready.</p>
+        <a href="/dashboard" class="section-cta">Explore Module 10 →</a>
+      </div>
+    </section>
+
+    <!-- 006 · CTA (88–100%, persist) -->
+    <section class="scroll-section section-cta-final"
+             data-enter="88" data-leave="100" data-animation="fade-up" data-persist="true">
+      <div class="section-inner cta-inner">
+        <span class="section-label">006 / Get Started</span>
+        <h2 class="section-heading cta-heading">Ready to Eliminate the Manual Grind?</h2>
+        <p class="section-body cta-body">Join 500+ forensic appraisal specialists who use ValuVault AI to deliver faster, more defensible engagements.</p>
+        <div class="cta-buttons">
+          <a href="/dashboard" class="btn-gold cta-button">Start Free Trial →</a>
+          <a href="/dashboard" class="btn-outline-dark cta-button">Book a Demo</a>
+        </div>
+        <div class="cta-trust">
+          <span>SOC2 Type II</span>
+          <span>·</span>
+          <span>256-bit Encryption</span>
+          <span>·</span>
+          <span>NACVA / ASA Aligned</span>
+        </div>
+      </div>
+    </section>
+
+  </div><!-- /#scroll-container -->
+
+  <!-- ══ FOOTER ══ -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <div class="footer-logo">
+          <svg width="22" height="22" viewBox="0 0 28 28" fill="none">
+            <rect width="28" height="28" rx="6" fill="#0B2046"/>
+            <path d="M7 14L12 19L21 10" stroke="#F0A80E" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          ValuVault <em>AI</em>
+        </div>
+        <p>Enterprise-grade forensic intelligence. Automating the Module 1–10 pipeline for appraisal specialists worldwide.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Platform</h4>
+        <ul>
+          <li><a href="/dashboard">Forensic Workbench</a></li>
+          <li><a href="/dashboard">Case Management</a></li>
+          <li><a href="/dashboard">AI Discovery</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Integrations</h4>
+        <ul>
+          <li><a href="#">IbisWorld / BVR</a></li>
+          <li><a href="#">NAICS / SIC Lookup</a></li>
+          <li><a href="#">QuickBooks Export</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Contact</h4>
+        <ul>
+          <li>forensic@valuvault.ai</li>
+          <li>1-800-VALU-AI</li>
+          <li>Appraisal Center, NY</li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2024 ValuVault Technologies Inc.</span>
+      <div class="footer-legal">
+        <a href="#">Security Protocol</a>
+        <a href="#">Privacy Policy</a>
+        <a href="#">Audit Logs</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/lenis@1/dist/lenis.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3/dist/ScrollTrigger.min.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
