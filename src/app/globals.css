@@ -54,6 +54,41 @@
 }
 
 /* ═══════════════════════════════════════════
+   App-level utilities
+═══════════════════════════════════════════ */
+
+/* Smooth page transitions */
+@layer utilities {
+  .page-enter {
+    animation: pageEnter 0.18s ease-out both;
+  }
+  @keyframes pageEnter {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Subtle card press effect */
+  .card-press:active {
+    transform: scale(0.99);
+    transition: transform 0.08s ease;
+  }
+}
+
+/* Sidebar active glow */
+[data-active="true"] > a,
+[data-active="true"] > button {
+  background: hsl(var(--sidebar-accent)) !important;
+  border-left: 2px solid hsl(var(--sidebar-primary));
+}
+
+/* Better focus ring for form inputs inside the app */
+.app-input:focus-visible {
+  outline: none;
+  ring: 2px solid hsl(var(--primary) / 0.25);
+  border-color: hsl(var(--primary) / 0.4);
+}
+
+/* ═══════════════════════════════════════════
    Landing page scroll experience (lp-*)
    All styles scoped with lp- prefix to avoid
    collision with the rest of the app.
