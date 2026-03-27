@@ -29,7 +29,7 @@ export async function signup(formData: FormData) {
     },
   });
 
-  const session = await encrypt({ userId: user.id, organizationId: org.id });
+  const session = await encrypt({ userId: user.id, organizationId: org.id, role: user.role, email: user.email });
   (await cookies()).set("session", session, { httpOnly: true, expires: new Date(Date.now() + 2 * 60 * 60 * 1000) });
 
   redirect("/dashboard");
@@ -47,7 +47,7 @@ export async function login(formData: FormData) {
     return { error: "Invalid credentials" };
   }
 
-  const session = await encrypt({ userId: user.id, organizationId: user.organizationId });
+  const session = await encrypt({ userId: user.id, organizationId: user.organizationId, role: user.role, email: user.email });
   (await cookies()).set("session", session, { httpOnly: true, expires: new Date(Date.now() + 2 * 60 * 60 * 1000) });
 
   redirect("/dashboard");
