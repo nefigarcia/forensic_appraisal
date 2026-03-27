@@ -590,17 +590,19 @@ export default function LandingPage() {
           style={{
             position: 'fixed', inset: 0, zIndex: 9999,
             background: 'rgba(8,12,24,0.82)', backdropFilter: 'blur(6px)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
             padding: '1rem',
+            overflowY: 'auto',
           }}
           onClick={() => setPlansOpen(false)}
         >
           <div
             style={{
               background: '#0d1321', border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: '1.25rem', padding: '2.5rem 2rem',
+              borderRadius: '1.25rem', padding: 'clamp(1.25rem, 5vw, 2.5rem) clamp(1rem, 5vw, 2rem)',
               maxWidth: '860px', width: '100%', position: 'relative',
               boxShadow: '0 32px 80px rgba(0,0,0,0.6)',
+              margin: 'auto',
             }}
             onClick={e => e.stopPropagation()}
           >
@@ -629,7 +631,7 @@ export default function LandingPage() {
             </div>
 
             {/* Plan cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(220px, 100%), 1fr))', gap: '1rem' }}>
               {[
                 {
                   name: 'Solo',

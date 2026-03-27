@@ -150,7 +150,7 @@ export default function ProjectsPage() {
                   </DialogHeader>
                   <div className="grid gap-4 py-4">
                     <div className="space-y-1.5">
-                      <Label htmlFor="name" className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Matter Name</Label>
+                      <Label htmlFor="name" className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Case Name</Label>
                       <Input id="name" name="name" placeholder="Smith v. Jones — Business Interest" className="h-10" required />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
@@ -222,7 +222,7 @@ export default function ProjectsPage() {
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60" />
             <Input
               className="pl-10 h-11 bg-white border-border/60 shadow-sm text-sm"
-              placeholder="Search by matter name or client…"
+              placeholder="Search by case name or client…"
               value={searchQuery}
               onChange={(e) => setSearch(e.target.value)}
             />
