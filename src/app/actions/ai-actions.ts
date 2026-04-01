@@ -37,6 +37,7 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
     orderBy: { createdAt: 'desc' },
   })
   if (!doc?.s3Key) throw new Error('No document found in custody binder.')
+  if (doc.status === 'EXTRACTED') throw new Error('Document has already been extracted.')
 
   let documentDataUri: string
   try {

@@ -227,6 +227,12 @@ export default function ProjectDetail() {
       return
     }
 
+    const alreadyExtracted = caseData.documents.every((doc: any) => doc.status === 'EXTRACTED')
+    if (alreadyExtracted) {
+      toast({ title: "Already Extracted", description: "All documents in the binder have already been extracted.", variant: "destructive" })
+      return
+    }
+
     setIsExtracting(true)
     try {
       await runFinancialExtraction(id as string);
