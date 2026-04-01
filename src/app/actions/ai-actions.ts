@@ -227,6 +227,7 @@ export async function runTtmNormalization(caseId: string) {
   if (!rawItems.length) throw new Error('No financial data found to normalize.')
 
   const result = await normalizeTtmData({ rawItems: rawItems.map(i => ({ year: i.year, statementType: i.statementType, lineItem: i.lineItem, value: i.value, currency: i.currency })) })
+  await prisma.case.update({ where: { id: caseId }, data: { ttmReport: result as any } })
   await logAction({ userId: session!.userId, action: 'RUN_TTM_NORMALIZATION', caseId })
   revalidatePath(`/projects/${caseId}`)
   return result

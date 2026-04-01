@@ -27,9 +27,7 @@ import {
   ArrowDownRight,
   Send,
   FileSearch,
-  FileBarChart,
   Grid3X3,
-  Copy,
   Info,
   ShieldCheck,
   Building2,
@@ -54,6 +52,7 @@ import { useParams } from "next/navigation"
 import { getCaseDetails } from "@/app/actions/cases"
 import { addDocument } from "@/app/actions/documents"
 import { runFinancialExtraction, runIndustryAnalysis, updateFinancialValue, approveFinancialValues, askBinder, runTtmNormalization, acceptFinancialValue, overrideFinancialValue, rejectFinancialValue, toggleLockFinancialValue, runAnomalyDetection, resolveAnomalyFlag, refreshCaseInsights, draftReportSection } from "@/app/actions/ai-actions"
+import { AIThinkingDialog, AI_MESSAGES } from "@/components/ai-thinking-dialog"
 import { ConfidenceBadge } from "@/components/confidence-badge"
 import { OverrideDialog } from "@/components/override-dialog"
 import { AuditLogPanel } from "@/components/audit-log-panel"
@@ -112,8 +111,10 @@ export default function ProjectDetail() {
 
   const [isNormalizing, setIsNormalizing] = React.useState(false)
   const [ttmReport, setTtmReport] = React.useState<any>(null)
+  const [aiThinking, setAiThinking] = React.useState<{ title: string; messages: string[] } | null>(null)
 
   const [selectedFile, setSelectedFile] = React.useState<File | null>(null)
+  const [isDragging, setIsDragging] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   // Hybrid UX state
@@ -134,7 +135,11 @@ export default function ProjectDetail() {
       
       setCaseData(data);
       setAvailableConnectors(connectors);
-      
+
+      if (data?.ttmReport) {
+        setTtmReport(data.ttmReport);
+      }
+
       if (data && (data.financialData?.length ?? 0) > 0 && !activeStatementType) {
         setActiveStatementType(data.financialData[0].statementType);
       }
@@ -234,19 +239,28 @@ export default function ProjectDetail() {
     }
 
     setIsExtracting(true)
+    setAiThinking({ title: "Document Extraction", messages: AI_MESSAGES.extraction })
     try {
       await runFinancialExtraction(id as string);
       await loadData()
       toast({ title: "Forensic Extraction Successful", description: `Financial values have been persisted to the ledger.` })
+      setIsNormalizing(true)
+      setAiThinking({ title: "TTM Normalization", messages: AI_MESSAGES.normalization })
+      const res = await runTtmNormalization(id as string)
+      setTtmReport(res)
+      toast({ title: "TTM Report Ready", description: "Formatted report generated automatically." })
     } catch (error: any) {
       toast({ title: "Extraction Error", description: error.message || "Failed to process document content.", variant: "destructive" })
     } finally {
       setIsExtracting(false)
+      setIsNormalizing(false)
+      setAiThinking(null)
     }
   }
 
   const handleTtmNormalization = async () => {
     setIsNormalizing(true);
+    setAiThinking({ title: "TTM Normalization", messages: AI_MESSAGES.normalization })
     try {
       const res = await runTtmNormalization(id as string);
       setTtmReport(res);
@@ -255,35 +269,10 @@ export default function ProjectDetail() {
       toast({ title: "Normalization Error", description: error.message, variant: "destructive" });
     } finally {
       setIsNormalizing(false);
+      setAiThinking(null)
     }
   }
 
-  const handleCopyTtmToClipboard = () => {
-    if (!ttmReport || !caseData) return;
-    
-    const reportTitle = activeStatementType || "Universal TTM";
-    let text = `Client: ${caseData.client}\tReport: ${reportTitle} Normalization Report\n\n`;
-    const headers = ["Standardized Item", ...ttmYears, "Trailing 12m"];
-    text += headers.join("\t") + "\n";
-
-    ttmReport.standardizedReport.forEach((cat: any) => {
-      text += `\n${cat.category.toUpperCase()}\n`;
-      cat.items.forEach((item: any) => {
-        const row = [
-          item.standardizedLabel,
-          ...ttmYears.map(year => item.valuesByYear[year] || 0),
-          item.ttmValue || 0
-        ];
-        text += row.join("\t") + "\n";
-      });
-    });
-
-    navigator.clipboard.writeText(text).then(() => {
-      toast({ title: "Copied to Clipboard", description: "Data formatted for Excel (tab-separated)." });
-    }).catch(err => {
-      toast({ title: "Copy Failed", variant: "destructive" });
-    });
-  }
 
   const handleDownloadXlsx = async () => {
     if (!ttmReport || !caseData) return;
@@ -367,6 +356,7 @@ export default function ProjectDetail() {
   const handleBinderChat = async () => {
     if (!chatQuery) return;
     setIsChatting(true);
+    setAiThinking({ title: "Discovery Search", messages: AI_MESSAGES.binder })
     try {
       const res = await askBinder(id as string, chatQuery);
       setChatAnswer(res.answer);
@@ -374,6 +364,7 @@ export default function ProjectDetail() {
       toast({ title: "Discovery Error", variant: "destructive" });
     } finally {
       setIsChatting(false);
+      setAiThinking(null)
     }
   }
 
@@ -403,29 +394,10 @@ export default function ProjectDetail() {
     }
   }
 
-  const handleExport = () => {
-    if (!pivotData.rows.length) return;
-    const headers = ["Line Item / Account", ...pivotData.years];
-    const csvRows = pivotData.rows.map((row: any) => {
-      const lineValues = pivotData.years.map(year => row[year]?.value || 0);
-      return [`"${row.lineItem}"`, ...lineValues];
-    });
-    
-    const csvContent = [headers, ...csvRows].map(e => e.join(",")).join("\n");
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `${activeStatementType?.replace(/\s+/g, '_')}_Forensic_Ledger.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    toast({ title: "Export Started" });
-  }
 
   const handleIndustryAnalysis = async () => {
     setIsAnalyzingIndustry(true)
+    setAiThinking({ title: "Industry Analysis", messages: AI_MESSAGES.industry })
     try {
       const description = `Industry classification for ${caseData.client}. Matter type: ${caseData.type}. Case Name: ${caseData.name}.`;
       await runIndustryAnalysis(id as string, description);
@@ -435,12 +407,35 @@ export default function ProjectDetail() {
       toast({ title: "Analysis Error", variant: "destructive" })
     } finally {
       setIsAnalyzingIndustry(false)
+      setAiThinking(null)
     }
   }
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setSelectedFile(e.target.files[0])
+    }
+  }
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file && /\.(pdf|png|jpe?g)$/i.test(file.name)) {
+      setSelectedFile(file)
     }
   }
 
@@ -502,12 +497,13 @@ export default function ProjectDetail() {
 
   const handleRunAnomalies = async () => {
     setIsRunningAnomalies(true)
+    setAiThinking({ title: "Anomaly Detection", messages: AI_MESSAGES.anomalies })
     try {
       const res = await runAnomalyDetection(id as string)
       await loadData()
       toast({ title: `Anomaly scan complete`, description: `${(res as any).saved ?? 0} flags saved` })
     } catch (e: any) { toast({ title: e.message, variant: 'destructive' }) }
-    finally { setIsRunningAnomalies(false) }
+    finally { setIsRunningAnomalies(false); setAiThinking(null) }
   }
 
   const handleResolveFlag = async (flagId: string, resolution: string) => {
@@ -520,22 +516,24 @@ export default function ProjectDetail() {
 
   const handleRefreshInsights = async () => {
     setIsRefreshingInsights(true)
+    setAiThinking({ title: "Refreshing Insights", messages: AI_MESSAGES.insights })
     try {
       await refreshCaseInsights(id as string)
       await loadData()
       toast({ title: 'Insights refreshed' })
     } catch (e: any) { toast({ title: e.message, variant: 'destructive' }) }
-    finally { setIsRefreshingInsights(false) }
+    finally { setIsRefreshingInsights(false); setAiThinking(null) }
   }
 
   const handleDraftSection = async (section: string) => {
     setIsDraftingSection(section)
+    setAiThinking({ title: `Drafting: ${section}`, messages: AI_MESSAGES.report })
     try {
       const res = await draftReportSection(id as string, section as any, draftedNarrative[section])
       setDraftedNarrative(prev => ({ ...prev, [section]: res.narrative }))
       toast({ title: `Section drafted: ${section}` })
     } catch (e: any) { toast({ title: e.message, variant: 'destructive' }) }
-    finally { setIsDraftingSection(null) }
+    finally { setIsDraftingSection(null); setAiThinking(null) }
   }
 
   const reviewedValues = React.useMemo(() => {
@@ -551,6 +549,11 @@ export default function ProjectDetail() {
   return (
     <SidebarProvider>
       <AppSidebar />
+      <AIThinkingDialog
+        open={!!aiThinking}
+        title={aiThinking?.title ?? ''}
+        messages={aiThinking?.messages ?? []}
+      />
       <SidebarInset>
         <header className="flex h-16 shrink-0 items-center justify-between px-6 border-b bg-white shadow-sm z-10">
           <div className="flex items-center gap-3">
@@ -591,16 +594,33 @@ export default function ProjectDetail() {
                 <form onSubmit={handleUpload} className="space-y-6 mt-4">
                   <div className="space-y-2">
                     <input type="file" className="hidden" ref={fileInputRef} accept=".pdf,.png,.jpg,.jpeg" onChange={handleFileChange} />
-                    <div onClick={() => fileInputRef.current?.click()} className={cn("flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-8 transition-all cursor-pointer group bg-muted/5 hover:bg-muted/10", selectedFile ? "border-green-500/50 bg-green-50/50" : "border-muted-foreground/20")}>
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      className={cn(
+                        "flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-8 transition-all cursor-pointer group bg-muted/5",
+                        selectedFile ? "border-green-500/50 bg-green-50/50" :
+                        isDragging ? "border-primary bg-primary/5 scale-[1.01]" :
+                        "border-muted-foreground/20 hover:bg-muted/10"
+                      )}
+                    >
                       {selectedFile ? (
                         <div className="text-center">
                           <CheckCircle2 className="h-8 w-8 text-green-600 mx-auto mb-2" />
                           <p className="text-xs font-bold text-green-700">{selectedFile.name}</p>
                         </div>
+                      ) : isDragging ? (
+                        <div className="text-center">
+                          <UploadCloud className="h-8 w-8 text-primary mx-auto mb-2 animate-bounce" />
+                          <p className="text-xs font-semibold text-primary">Drop to attach</p>
+                        </div>
                       ) : (
                         <div className="text-center">
                           <UploadCloud className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                          <p className="text-xs font-medium text-muted-foreground">Select File (PDF, JPG, PNG)</p>
+                          <p className="text-xs font-medium text-muted-foreground">Drop file here or click to select</p>
+                          <p className="text-[10px] text-muted-foreground/60 mt-1">PDF, JPG, PNG</p>
                         </div>
                       )}
                     </div>
@@ -660,10 +680,6 @@ export default function ProjectDetail() {
               <TabsTrigger value="analysis" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <TableIcon className="mr-2 h-4 w-4" />
                 Forensic Ledger
-              </TabsTrigger>
-              <TabsTrigger value="ttm" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
-                <FileBarChart className="mr-2 h-4 w-4" />
-                TTM Analysis
               </TabsTrigger>
               <TabsTrigger value="industry" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <Globe className="mr-2 h-4 w-4" />
@@ -837,197 +853,140 @@ export default function ProjectDetail() {
                         <CardTitle className="text-sm font-bold uppercase tracking-widest">{activeStatementType || "Select Audit Target"}</CardTitle>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button onClick={handleApprove} variant="outline" size="sm" className="bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 text-[10px] font-bold uppercase h-9">
-                          <CheckCircle2 className="mr-2 h-3.5 w-3.5" /> Approve Report
-                        </Button>
+                        {isEditingLedger && (
+                          <Button onClick={handleApprove} variant="outline" size="sm" className="bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 text-[10px] font-bold uppercase h-9">
+                            <CheckCircle2 className="mr-2 h-3.5 w-3.5" /> Approve Report
+                          </Button>
+                        )}
                         <Button onClick={() => setIsEditingLedger(!isEditingLedger)} variant="outline" size="sm" className="text-[10px] font-bold uppercase h-9">
                           <Edit3 className="mr-2 h-3.5 w-3.5" /> {isEditingLedger ? "Exit Edit" : "Edit Values"}
                         </Button>
-                        <Button onClick={handleExport} variant="outline" size="sm" className="text-[10px] font-bold uppercase h-9">
-                          <Download className="mr-2 h-3.5 w-3.5" /> Export Catalog
+                        <Button onClick={handleTtmNormalization} disabled={isNormalizing} variant="outline" size="sm" className="text-[10px] font-bold uppercase h-9">
+                          {isNormalizing ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Grid3X3 className="mr-2 h-3.5 w-3.5" />}
+                          Re-normalize
+                        </Button>
+                        <Button onClick={handleDownloadXlsx} disabled={!ttmReport} variant="outline" size="sm" className="bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 text-[10px] font-bold uppercase h-9">
+                          <Download className="mr-2 h-3.5 w-3.5" /> Download .xlsx
                         </Button>
                       </div>
                     </CardHeader>
                     <CardContent className="p-0 overflow-x-auto">
-                      <Table>
-                        <TableHeader className="bg-muted/30">
-                          <TableRow>
-                            <TableHead className="text-[10px] uppercase font-bold tracking-widest min-w-[250px]">Line Item / Account</TableHead>
-                            {pivotData.years.map(year => (
-                              <TableHead key={year} className="text-center text-[10px] uppercase font-bold tracking-widest min-w-[150px]">{year}</TableHead>
-                            ))}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {pivotData.rows.map((row: any, idx: number) => (
-                            <TableRow key={idx}>
-                              <TableCell className="font-medium text-slate-700">
-                                {row.lineItem}
-                              </TableCell>
-                              {pivotData.years.map((year) => {
-                                const entry = row[year];
-                                const variance = row[`${year}_var`];
-                                const isFlagged = variance && Math.abs(variance) > 50;
-                                
-                                return (
-                                  <TableCell key={year} className={cn("text-center", isFlagged ? "bg-orange-50/50" : "")}>
-                                    {isEditingLedger && entry ? (
+                      {isEditingLedger ? (
+                        <Table>
+                          <TableHeader className="bg-muted/30">
+                            <TableRow>
+                              <TableHead className="text-[10px] uppercase font-bold tracking-widest min-w-[250px]">Line Item / Account</TableHead>
+                              {pivotData.years.map(year => (
+                                <TableHead key={year} className="text-center text-[10px] uppercase font-bold tracking-widest min-w-[150px]">{year}</TableHead>
+                              ))}
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {pivotData.rows.map((row: any, idx: number) => (
+                              <TableRow key={idx}>
+                                <TableCell className="font-medium text-slate-700">{row.lineItem}</TableCell>
+                                {pivotData.years.map((year) => {
+                                  const entry = row[year];
+                                  const variance = row[`${year}_var`];
+                                  const isFlagged = variance && Math.abs(variance) > 50;
+                                  return (
+                                    <TableCell key={year} className={cn("text-center", isFlagged ? "bg-orange-50/50" : "")}>
                                       <div className="flex items-center gap-1 justify-center">
-                                        <Input 
-                                          type="number" 
-                                          defaultValue={entry.value} 
-                                          className="h-8 text-xs text-center w-28 font-bold text-primary" 
-                                          id={`val-${entry.id}`} 
+                                        <Input
+                                          type="number"
+                                          defaultValue={entry?.value}
+                                          className="h-8 text-xs text-center w-28 font-bold text-primary"
+                                          id={`val-${entry?.id}`}
                                         />
                                         <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => {
-                                          const el = document.getElementById(`val-${entry.id}`) as HTMLInputElement;
-                                          if (el) {
-                                            const val = parseFloat(el.value);
-                                            handleSaveEdit(entry.id, val, row.lineItem);
+                                          const el = document.getElementById(`val-${entry?.id}`) as HTMLInputElement;
+                                          if (el && entry) {
+                                            handleSaveEdit(entry.id, parseFloat(el.value), row.lineItem);
                                           }
                                         }}>
-                                          {savingId === entry.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3 text-primary" />}
+                                          {savingId === entry?.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3 text-primary" />}
                                         </Button>
                                       </div>
-                                    ) : (
-                                      <div className="flex flex-col items-center">
-                                        <span className={cn("font-bold text-sm", entry ? "text-primary" : "text-muted-foreground italic")}>
-                                          {entry ? entry.value.toLocaleString(undefined, { style: 'currency', currency: entry.currency || 'USD' }) : "-"}
-                                        </span>
-                                        {variance !== undefined && (
-                                          <div className={cn(
-                                            "flex items-center gap-0.5 text-[9px] font-black uppercase mt-1",
-                                            variance > 0 ? "text-emerald-600" : "text-rose-600"
-                                          )}>
-                                            {variance > 0 ? <ArrowUpRight className="h-2.5 w-2.5" /> : <ArrowDownRight className="h-2.5 w-2.5" />}
-                                            {Math.abs(variance).toFixed(1)}%
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-                                  </TableCell>
-                                );
-                              })}
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="ttm">
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-2xl font-black text-primary tracking-tight">Normalized TTM Report</h2>
-                    <p className="text-sm text-muted-foreground font-medium">Universal Trailing Twelve Months Analysis (Formatted for Valuation)</p>
-                  </div>
-                  <div className="flex gap-3">
-                    <Button onClick={handleTtmNormalization} disabled={isNormalizing} className="bg-primary shadow-lg font-bold uppercase text-xs h-11 px-6">
-                      {isNormalizing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Grid3X3 className="mr-2 h-4 w-4" />}
-                      Generate Structured TTM
-                    </Button>
-                    <Button 
-                      onClick={handleDownloadXlsx}
-                      disabled={!ttmReport}
-                      variant="outline" 
-                      className="h-11 px-6 font-bold uppercase text-xs bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
-                    >
-                      <Download className="mr-2 h-4 w-4" />
-                      Download .xlsx
-                    </Button>
-                    <Button 
-                      onClick={handleCopyTtmToClipboard}
-                      disabled={!ttmReport}
-                      variant="outline" 
-                      className="h-11 px-6 font-bold uppercase text-xs"
-                    >
-                      <Copy className="mr-2 h-4 w-4" />
-                      Copy/Paste
-                    </Button>
-                  </div>
-                </div>
-
-                {!ttmReport ? (
-                  <Card className="border-2 border-dashed border-primary/20 bg-primary/5 py-24 text-center">
-                    <CardContent>
-                      <FileBarChart className="h-12 w-12 mx-auto mb-6 text-primary/40" />
-                      <h3 className="text-xl font-bold text-primary tracking-tight">Generate TTM Projection</h3>
-                      <p className="text-sm text-muted-foreground mt-2 max-w-sm mx-auto font-medium leading-relaxed">
-                        The AI will map your raw forensic ledger entries to universal accounting categories and calculate trailing projections.
-                      </p>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div className="space-y-8">
-                    <div className="bg-primary/5 p-8 rounded-2xl border text-center shadow-inner">
-                      <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-primary/60 mb-2">Internal Valuation Workpaper</h3>
-                      <h2 className="text-3xl font-black text-primary tracking-tight">{caseData.client}</h2>
-                      <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground mt-1">
-                        {activeStatementType || "Universal TTM"} Normalization Report
-                      </p>
-                    </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <Card className="bg-white border-none shadow-sm">
-                        <CardHeader className="pb-2"><CardTitle className="text-[10px] uppercase font-bold text-muted-foreground">EBITDA (TTM)</CardTitle></CardHeader>
-                        <CardContent><p className="text-2xl font-black text-primary">${Object.values(ttmReport.summary.ebitda).pop()?.toLocaleString()}</p></CardContent>
-                      </Card>
-                      <Card className="bg-white border-none shadow-sm">
-                        <CardHeader className="pb-2"><CardTitle className="text-[10px] uppercase font-bold text-muted-foreground">Net Income (TTM)</CardTitle></CardHeader>
-                        <CardContent><p className="text-2xl font-black text-emerald-600">${Object.values(ttmReport.summary.netIncome).pop()?.toLocaleString()}</p></CardContent>
-                      </Card>
-                    </div>
-
-                    <Card className="border-none shadow-sm overflow-hidden bg-white">
-                      <Table>
-                        <TableHeader className="bg-muted/30">
-                          <TableRow>
-                            <TableHead className="text-[10px] uppercase font-bold tracking-widest min-w-[250px]">Standardized Item</TableHead>
-                            {ttmYears.map(year => (
-                              <TableHead key={year} className="text-center text-[10px] uppercase font-bold tracking-widest">{year}</TableHead>
-                            ))}
-                            <TableHead className="text-center text-[10px] uppercase font-bold tracking-widest bg-primary/5 text-primary">Trailing 12m</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {ttmReport.standardizedReport.map((cat: any) => (
-                            <React.Fragment key={cat.category}>
-                              <TableRow className="bg-muted/10">
-                                <TableCell colSpan={ttmYears.length + 2} className="text-[10px] font-black uppercase text-primary tracking-[0.2em] py-2 bg-primary/5">
-                                  {cat.category}
-                                </TableCell>
-                              </TableRow>
-                              {cat.items.map((item: any, iIdx: number) => (
-                                <TableRow key={iIdx} className="group hover:bg-muted/30">
-                                  <TableCell className="pl-8">
-                                    <div className="flex flex-col">
-                                      <span className="font-bold text-sm">{item.standardizedLabel}</span>
-                                      <span className="text-[9px] uppercase font-medium text-muted-foreground/60">{item.originalLabel}</span>
-                                    </div>
-                                  </TableCell>
-                                  {ttmYears.map(year => (
-                                    <TableCell key={year} className="text-center font-medium text-slate-700">
-                                      {item.valuesByYear[year]?.toLocaleString(undefined, { style: 'currency', currency: 'USD' }) || "-"}
                                     </TableCell>
+                                  );
+                                })}
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      ) : ttmReport ? (
+                        <div className="space-y-6 p-6">
+                          <div className="bg-primary/5 p-6 rounded-xl border text-center">
+                            <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-primary/60 mb-1">Internal Valuation Workpaper</h3>
+                            <h2 className="text-2xl font-black text-primary tracking-tight">{caseData.client}</h2>
+                            <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mt-1">
+                              {activeStatementType || "Universal TTM"} Normalization Report
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <Card className="bg-white border shadow-sm">
+                              <CardHeader className="pb-2"><CardTitle className="text-[10px] uppercase font-bold text-muted-foreground">EBITDA (TTM)</CardTitle></CardHeader>
+                              <CardContent><p className="text-2xl font-black text-primary">${Object.values(ttmReport.summary.ebitda).pop()?.toLocaleString()}</p></CardContent>
+                            </Card>
+                            <Card className="bg-white border shadow-sm">
+                              <CardHeader className="pb-2"><CardTitle className="text-[10px] uppercase font-bold text-muted-foreground">Net Income (TTM)</CardTitle></CardHeader>
+                              <CardContent><p className="text-2xl font-black text-emerald-600">${Object.values(ttmReport.summary.netIncome).pop()?.toLocaleString()}</p></CardContent>
+                            </Card>
+                          </div>
+                          <Table>
+                            <TableHeader className="bg-muted/30">
+                              <TableRow>
+                                <TableHead className="text-[10px] uppercase font-bold tracking-widest min-w-[250px]">Standardized Item</TableHead>
+                                {ttmYears.map(year => (
+                                  <TableHead key={year} className="text-center text-[10px] uppercase font-bold tracking-widest">{year}</TableHead>
+                                ))}
+                                <TableHead className="text-center text-[10px] uppercase font-bold tracking-widest bg-primary/5 text-primary">Trailing 12m</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {ttmReport.standardizedReport.map((cat: any) => (
+                                <React.Fragment key={cat.category}>
+                                  <TableRow className="bg-muted/10">
+                                    <TableCell colSpan={ttmYears.length + 2} className="text-[10px] font-black uppercase text-primary tracking-[0.2em] py-2 bg-primary/5">
+                                      {cat.category}
+                                    </TableCell>
+                                  </TableRow>
+                                  {cat.items.map((item: any, iIdx: number) => (
+                                    <TableRow key={iIdx} className="hover:bg-muted/30">
+                                      <TableCell className="pl-8">
+                                        <div className="flex flex-col">
+                                          <span className="font-bold text-sm">{item.standardizedLabel}</span>
+                                          <span className="text-[9px] uppercase font-medium text-muted-foreground/60">{item.originalLabel}</span>
+                                        </div>
+                                      </TableCell>
+                                      {ttmYears.map(year => (
+                                        <TableCell key={year} className="text-center font-medium text-slate-700">
+                                          {item.valuesByYear[year]?.toLocaleString(undefined, { style: 'currency', currency: 'USD' }) || "-"}
+                                        </TableCell>
+                                      ))}
+                                      <TableCell className="text-center font-black text-primary bg-primary/5">
+                                        {item.ttmValue?.toLocaleString(undefined, { style: 'currency', currency: 'USD' }) || "-"}
+                                      </TableCell>
+                                    </TableRow>
                                   ))}
-                                  <TableCell className="text-center font-black text-primary bg-primary/5">
-                                    {item.ttmValue?.toLocaleString(undefined, { style: 'currency', currency: 'USD' }) || "-"}
-                                  </TableCell>
-                                </TableRow>
+                                </React.Fragment>
                               ))}
-                            </React.Fragment>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </Card>
-                  </div>
-                )}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      ) : (
+                        <div className="py-24 text-center">
+                          <FileSpreadsheet className="h-10 w-10 mx-auto mb-4 text-muted-foreground/20" />
+                          <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Run Extraction to Generate Report</p>
+                          <p className="text-[9px] text-muted-foreground mt-2">The formatted TTM report will appear here automatically after extraction.</p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
               </div>
             </TabsContent>
+
 
             <TabsContent value="industry">
               <div className="space-y-6">

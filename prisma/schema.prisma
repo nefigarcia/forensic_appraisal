@@ -70,6 +70,7 @@ model Case {
   anomalyFlags     AnomalyFlag[]
   auditLogs        AuditLog[]
   insights         CaseInsight[]
+  ttmReport        Json?                   // persisted normalized TTM report — avoids re-running AI on reload
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
 }
