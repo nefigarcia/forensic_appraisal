@@ -2,15 +2,15 @@
 'use server';
 
 import { prisma } from "@/lib/prisma";
-import { getSession } from "@/lib/auth-utils";
 import { revalidatePath } from "next/cache";
+import { requireOrganization, requireConnectorAccess } from "@/lib/authz";
 
 export async function getExternalConnections() {
-  const session = await getSession();
-  if (!session) return [];
+  let session;
+  try { session = await requireOrganization(); } catch { return []; }
 
   return await prisma.externalConnector.findMany({
-    where: { 
+    where: {
       organizationId: session.organizationId,
       status: "CONNECTED"
     }
@@ -18,12 +18,11 @@ export async function getExternalConnections() {
 }
 
 export async function saveOAuthToken(provider: string, tokenData: any) {
-  const session = await getSession();
-  if (!session) throw new Error("Unauthorized");
+  const session = await requireOrganization();
 
   // Calculate expiry if provided
-  const expiresAt = tokenData.expires_in 
-    ? new Date(Date.now() + tokenData.expires_in * 1000) 
+  const expiresAt = tokenData.expires_in
+    ? new Date(Date.now() + tokenData.expires_in * 1000)
     : null;
 
   await prisma.externalConnector.upsert({
@@ -49,6 +48,16 @@ export async function saveOAuthToken(provider: string, tokenData: any) {
       status: "CONNECTED"
     }
   });
-  
+
   revalidatePath('/connections');
+}
+
+/**
+ * Explicit tenant-scoped fetch for a single connector by id. Not currently
+ * used from the UI, but exposed so future connector-scoped operations
+ * (delete, refresh, revoke) don't have to reimplement the check.
+ */
+export async function getConnector(connectorId: string) {
+  const { connector } = await requireConnectorAccess(connectorId);
+  return connector;
 }

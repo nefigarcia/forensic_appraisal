@@ -1,9 +1,33 @@
-# ValuVault V2 — Authorization Matrix (Baseline)
+# ValuVault V2 — Authorization Matrix
 
-Snapshot at **Slice 0**. Every server action (`src/app/actions/`) and API
-handler (`src/app/api/`) is catalogued. The purpose is not to redesign
-authorization here — it is to make the current state visible so future
-slices can close specific gaps deliberately.
+Baseline captured in **Slice 0**. Tenant enforcement retrofitted in
+**Slice 1** — every server action listed as `IDOR-W`/`IDOR-R` in the
+baseline now routes through the central helpers in `src/lib/authz.ts`.
+Sections marked *(Slice 1)* record what changed; the rest of the document
+remains as the historical baseline so future slices can see the delta.
+
+## Slice 1 update — 2026-09-04
+
+- Added `src/lib/authz.ts` with `requireSession`, `requireOrganization`,
+  `requirePermission`, plus per-resource `require*Access(id, permission?)`
+  helpers for Case, Document, FinancialValue, AddBack, ValuationModel,
+  AnomalyFlag, CaseInsight, and ExternalConnector.
+- Every helper fetches with a tenant-scoped filter *before* the permission
+  check, and throws a shared `NotFoundError` on cross-tenant miss or
+  genuine miss — making the two indistinguishable (rule 7).
+- Every action listed in the baseline as `IDOR-W` or `IDOR-R` was
+  retrofitted. `dismissInsight` also gained tenant enforcement (was
+  session-only in baseline); its RBAC classification is unchanged and
+  remains a Slice 2 item.
+- `applyPlanToOrg` was **not** moved out of `billing-actions.ts` in this
+  slice (scope: tenant only). A `NOTE(slice-1)` in the code flags it for
+  Slice 2.
+- `saveOAuthToken`, `createCheckoutSession`, `createPortalSession` are
+  still session-scoped only (no `org:settings` guard). Slice 2 will
+  tighten them.
+- Cross-tenant integration test suite added at
+  `tests/integration/cross-tenant.test.ts` — 34 tests covering every
+  retrofitted action against an Org B resource.
 
 ---
 

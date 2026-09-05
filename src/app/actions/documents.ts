@@ -1,17 +1,15 @@
 'use server'
 
 import { prisma } from '@/lib/prisma'
-import { getSession } from '@/lib/auth-utils'
-import { guardAction } from '@/lib/rbac'
 import { logAction } from '@/lib/audit'
 import { revalidatePath } from 'next/cache'
 import { s3Client, BUCKET_NAME } from '@/lib/s3-client'
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { createHash } from 'crypto'
+import { requireCaseAccess, requireDocumentAccess } from '@/lib/authz'
 
 export async function addDocument(caseId: string, formData: FormData) {
-  const session = await getSession()
-  guardAction(session, 'document:upload')
+  const { session } = await requireCaseAccess(caseId, 'document:upload')
 
   const file            = formData.get('file') as File
   const displayName     = formData.get('name') as string
@@ -35,7 +33,7 @@ export async function addDocument(caseId: string, formData: FormData) {
 
     if (storageProvider !== 's3') {
       const connector = await prisma.externalConnector.findUnique({
-        where: { organizationId_provider: { organizationId: session!.organizationId, provider: storageProvider } },
+        where: { organizationId_provider: { organizationId: session.organizationId, provider: storageProvider } },
       })
       if (connector?.accessToken && storageProvider === 'microsoft') {
         try {
@@ -53,7 +51,7 @@ export async function addDocument(caseId: string, formData: FormData) {
     })
 
     await logAction({
-      userId: session!.userId, action: 'UPLOAD_DOCUMENT', caseId,
+      userId: session.userId, action: 'UPLOAD_DOCUMENT', caseId,
       targetModel: 'Document', targetId: doc.id,
       newValue: { name: doc.name, size: fileSize, sha256Hash },
     })
@@ -67,11 +65,7 @@ export async function addDocument(caseId: string, formData: FormData) {
 }
 
 export async function deleteDocument(documentId: string) {
-  const session = await getSession()
-  guardAction(session, 'document:delete')
-
-  const doc = await prisma.document.findUnique({ where: { id: documentId } })
-  if (!doc) throw new Error('Document not found')
+  const { session, document: doc } = await requireDocumentAccess(documentId, 'document:delete')
 
   if (doc.s3Key) {
     try {
@@ -82,7 +76,7 @@ export async function deleteDocument(documentId: string) {
   await prisma.document.delete({ where: { id: documentId } })
 
   await logAction({
-    userId: session!.userId, action: 'DELETE_DOCUMENT', caseId: doc.caseId,
+    userId: session.userId, action: 'DELETE_DOCUMENT', caseId: doc.caseId,
     targetModel: 'Document', targetId: documentId, oldValue: { name: doc.name },
   })
 

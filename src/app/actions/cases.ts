@@ -1,14 +1,18 @@
 'use server'
 
 import { prisma } from '@/lib/prisma'
-import { getSession } from '@/lib/auth-utils'
-import { guardAction } from '@/lib/rbac'
 import { logAction } from '@/lib/audit'
 import { revalidatePath } from 'next/cache'
+import {
+  requireSession,
+  requireOrganization,
+  requirePermission,
+  requireCaseAccess,
+} from '@/lib/authz'
 
 export async function getCases() {
-  const session = await getSession()
-  if (!session) return []
+  let session
+  try { session = await requireOrganization() } catch { return [] }
   return prisma.case.findMany({
     where: { organizationId: session.organizationId },
     orderBy: { createdAt: 'desc' },
@@ -20,8 +24,8 @@ export async function getCases() {
 }
 
 export async function createCase(formData: FormData) {
-  const session = await getSession()
-  guardAction(session, 'case:create')
+  const session = await requireSession()
+  requirePermission(session, 'case:create')
 
   // ── Plan limit enforcement ──────────────────────────────────────────────
   // @ts-ignore — casesLimit added by schema migration; resolves after `prisma generate`
@@ -69,8 +73,7 @@ export async function createCase(formData: FormData) {
 }
 
 export async function getCaseDetails(id: string) {
-  const session = await getSession()
-  guardAction(session, 'case:read')
+  await requireCaseAccess(id, 'case:read')
 
   return prisma.case.findUnique({
     where: { id },
@@ -97,8 +100,7 @@ export async function saveValuation(
     reconciliationNote?: string
   },
 ) {
-  const session = await getSession()
-  guardAction(session, 'valuation:write')
+  const { session } = await requireCaseAccess(caseId, 'valuation:write')
 
   const model = await prisma.valuationModel.create({ data: { caseId, ...data } })
 
@@ -109,8 +111,8 @@ export async function saveValuation(
 }
 
 export async function searchCases(query: string) {
-  const session = await getSession()
-  if (!session) return []
+  let session
+  try { session = await requireOrganization() } catch { return [] }
   return prisma.case.findMany({
     where: {
       organizationId: session.organizationId,
@@ -122,8 +124,7 @@ export async function searchCases(query: string) {
 }
 
 export async function getCaseCompleteness(caseId: string): Promise<{ score: number; missing: string[] }> {
-  const session = await getSession()
-  guardAction(session, 'case:read')
+  await requireCaseAccess(caseId, 'case:read')
 
   const c = await prisma.case.findUnique({
     where: { id: caseId },
