@@ -55,6 +55,7 @@ import { DocumentVersionHistory } from "@/components/document-version-history"
 import { runFinancialExtraction, runIndustryAnalysis, updateFinancialValue, approveFinancialValues, askBinder, runTtmNormalization, acceptFinancialValue, overrideFinancialValue, rejectFinancialValue, toggleLockFinancialValue, runAnomalyDetection, resolveAnomalyFlag, refreshCaseInsights, draftReportSection } from "@/app/actions/ai-actions"
 import { AIThinkingDialog, AI_MESSAGES } from "@/components/ai-thinking-dialog"
 import { ConfidenceBadge } from "@/components/confidence-badge"
+import { CitationIndicator } from "@/components/citation-indicator"
 import { OverrideDialog } from "@/components/override-dialog"
 import { AuditLogPanel } from "@/components/audit-log-panel"
 import { AuditIntegrityBadge } from "@/components/audit-integrity-badge"
@@ -1240,12 +1241,15 @@ export default function ProjectDetail() {
                                 {v.value.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
                               </TableCell>
                               <TableCell className="text-center">
-                                <ConfidenceBadge
-                                  confidence={v.confidence}
-                                  reviewStatus={v.reviewStatus}
-                                  isLocked={v.isLocked}
-                                  sourceRef={v.sourceRef}
-                                />
+                                <div className="flex flex-col items-center gap-1">
+                                  <ConfidenceBadge
+                                    confidence={v.confidence}
+                                    reviewStatus={v.reviewStatus}
+                                    isLocked={v.isLocked}
+                                    sourceRef={v.sourceRef}
+                                  />
+                                  <CitationIndicator financialValueId={v.id} />
+                                </div>
                               </TableCell>
                               <TableCell className="text-right">
                                 <div className="flex justify-end gap-1">

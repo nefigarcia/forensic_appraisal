@@ -151,6 +151,9 @@ model DocumentVersion {
   archiveReason String?  @db.Text
 
   currentFor    Document[] @relation("CurrentVersion")
+  // Slice 7 — every citation points at a specific immutable version, so a
+  // future re-upload cannot invalidate the citation.
+  citations     EvidenceCitation[]
 
   @@unique([documentId, versionNumber])
   @@index([sha256Hash])
@@ -184,6 +187,11 @@ model FinancialValue {
   overrideReason   String?   @db.Text
   overriddenBy     String?   // userId
   overriddenAt     DateTime?
+  // Slice 7 — evidence-level citations. Every material extracted value can
+  // have one or more citations pointing at the immutable DocumentVersion
+  // where it was found. `sourceRef` (Slice 0 legacy string) remains as-is
+  // for backward-compat readers.
+  citations        EvidenceCitation[]
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 }
@@ -210,6 +218,8 @@ model AddBack {
   rationale       String?  @db.Text // required before report generation
   isApproved      Boolean  @default(false)
   approvedBy      String?
+  // Slice 7 — citations for the source documents an add-back derives from.
+  citations       EvidenceCitation[]
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
@@ -286,6 +296,10 @@ model ValuationModel {
   specificRiskDecimal      Decimal? @db.Decimal(9,  6)
   indicatedValueDecimal    Decimal? @db.Decimal(19, 4)
   weightDecimal            Decimal? @db.Decimal(9,  6)
+  // Slice 7 — valuation assumptions (WACC components, multiples, DCF cash
+  // flows) can eventually be traced back to source evidence. The relation
+  // is here now; UI wire-in is a future slice.
+  citations                EvidenceCitation[]
 
   createdAt        DateTime @default(now())
 }
@@ -476,4 +490,64 @@ model MfaBackupCode {
   createdAt DateTime  @default(now())
 
   @@index([userId])
+}
+
+// ─────────────────────────────────────────────────
+// EVIDENCE CITATIONS (Slice 7)
+// ─────────────────────────────────────────────────
+// A citation ties a material forensic value (FinancialValue, AddBack, or
+// a valuation assumption on ValuationModel) back to a specific,
+// *immutable* DocumentVersion. Slice 5's version model guarantees that a
+// citation to v2 remains valid even when v3 supersedes it — the bytes
+// referenced by v2 don't change.
+//
+// isConfident is the anti-hallucination guard. When the AI can't
+// confidently locate a value, it emits a citation with isConfident=false
+// and NULLs the coordinate fields. The row still exists so the UI can
+// distinguish "AI tried but couldn't locate" from "no citation attempt
+// at all". Rule 9.
+model EvidenceCitation {
+  id                String   @id @default(cuid())
+  documentVersionId String
+  documentVersion   DocumentVersion @relation(fields: [documentVersionId], references: [id])
+
+  // Polymorphic parent — exactly one of these is set per row. Enforced
+  // by application logic (see src/lib/citations/parent.ts) since Prisma
+  // does not have a native discriminated-relation type.
+  financialValueId  String?
+  financialValue    FinancialValue? @relation(fields: [financialValueId], references: [id], onDelete: Cascade)
+  addBackId         String?
+  addBack           AddBack?        @relation(fields: [addBackId], references: [id], onDelete: Cascade)
+  valuationModelId  String?
+  valuationModel    ValuationModel? @relation(fields: [valuationModelId], references: [id], onDelete: Cascade)
+
+  // Location within the source document.
+  pageNumber        Int?
+  sourceLabel       String?  // human-readable, e.g. "Income Statement, row 'Gross Revenue'"
+  tableName         String?
+  rowLabel          String?
+  columnLabel       String?
+  // Optional structured bounding box: { x, y, w, h, unit: 'norm'|'pt'|'px' }.
+  // Different extractors use different conventions; we record the unit
+  // alongside the coordinates so the renderer can interpret them.
+  boundingBox       Json?
+
+  // Raw substring captured at extraction time.
+  rawText           String?  @db.Text
+
+  // Extractor provenance.
+  extractor         String?  // 'ai-genkit-v1' | 'analyst' | 'legacy-backfill'
+  extractorVersion  String?
+  confidence        Float?
+
+  // Anti-hallucination flag. False when the AI (or legacy backfill) had
+  // to record a citation without being able to pin the actual location.
+  isConfident       Boolean  @default(true)
+
+  createdAt         DateTime @default(now())
+
+  @@index([documentVersionId])
+  @@index([financialValueId])
+  @@index([addBackId])
+  @@index([valuationModelId])
 }

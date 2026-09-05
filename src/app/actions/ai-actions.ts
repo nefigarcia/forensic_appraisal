@@ -21,6 +21,7 @@ import {
   NotFoundError,
 } from '@/lib/authz'
 import { money, moneySum, serializeMoney, formatMoney } from '@/lib/money'
+import { toEvidenceCitationData } from '@/lib/citations/from-ai'
 
 async function streamToBuffer(stream: any): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -78,10 +79,15 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
   })
 
   if (result.extractedData?.length) {
-    await prisma.financialValue.createMany({
-      data: result.extractedData.map((item) => {
-        const v = item.value ?? 0
-        return {
+    // Slice 7 — attach citations to the immutable DocumentVersion (not
+    // the mutable Document). Fall back to no citation if the document has
+    // no current version yet (pre-Slice-5 backfill hasn't run).
+    const versionId = (doc as any).currentVersionId as string | null
+    // Insert values one at a time so we can attach citations by id.
+    for (const item of result.extractedData) {
+      const v = item.value ?? 0
+      const created = await prisma.financialValue.create({
+        data: {
           caseId,
           documentId: doc.id,
           year:          item.year          ?? 'Unknown',
@@ -96,9 +102,19 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
           currency:      item.currency      ?? 'USD',
           isVerified:    false,
           reviewStatus:  'PENDING',
-        }
-      }),
-    })
+        },
+      })
+      if (versionId) {
+        const cite = toEvidenceCitationData({
+          documentVersionId: versionId,
+          parent: { financialValueId: created.id },
+          hint: (item as any).citation ?? null,
+          sourceRef: item.sourceRef ?? null,
+          extractionConfidence: item.confidence ?? null,
+        })
+        await prisma.evidenceCitation.create({ data: cite as any })
+      }
+    }
     await prisma.document.update({ where: { id: doc.id }, data: { status: 'EXTRACTED' } })
   }
 

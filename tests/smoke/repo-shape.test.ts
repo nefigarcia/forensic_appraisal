@@ -100,6 +100,14 @@ describe('repository shape (Slice 0 baseline)', () => {
     'src/components/audit-integrity-badge.tsx',
     'docs/migrations/slice-6-audit-chain.sql',
     'docs/architecture/AUDIT_CHAIN.md',
+    // Slice 7 — evidence-level citations
+    'src/lib/citations/parent.ts',
+    'src/lib/citations/from-ai.ts',
+    'src/app/actions/citations.ts',
+    'src/components/citation-indicator.tsx',
+    'scripts/migrate-source-refs-to-citations.ts',
+    'docs/migrations/slice-7-evidence-citations.sql',
+    'docs/architecture/EVIDENCE_CITATIONS.md',
   ])('exists: %s', (rel) => {
     expect(existsSync(p(rel))).toBe(true)
   })
@@ -131,6 +139,8 @@ describe('repository shape (Slice 0 baseline)', () => {
       'src/app/actions/password-reset.ts',
       'src/app/actions/email-verification.ts',
       'src/app/actions/document-versions.ts',
+      'src/app/actions/citations.ts',
+      'src/app/actions/audit-integrity.ts',
     ]
     for (const rel of actionFiles) {
       const head = readFileSync(p(rel), 'utf8').slice(0, 40)
