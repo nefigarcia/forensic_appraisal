@@ -30,6 +30,7 @@ model Organization {
   users                 User[]
   cases                 Case[]
   connectors            ExternalConnector[]
+  aiExecutions          AiExecution[]
 }
 
 model User {
@@ -50,6 +51,7 @@ model User {
   sessionRevocations      SessionRevocation[]
   mfaSecret               MfaSecret?
   mfaBackupCodes          MfaBackupCode[]
+  aiExecutions            AiExecution[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 }
@@ -80,6 +82,7 @@ model Case {
   auditLogs        AuditLog[]
   insights         CaseInsight[]
   ttmReport        Json?                   // persisted normalized TTM report — avoids re-running AI on reload
+  aiExecutions     AiExecution[]
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
 }
@@ -192,8 +195,14 @@ model FinancialValue {
   // where it was found. `sourceRef` (Slice 0 legacy string) remains as-is
   // for backward-compat readers.
   citations        EvidenceCitation[]
+  // Slice 8 — trace back to the AI execution that proposed this value.
+  // NULL for hand-entered rows and pre-Slice-8 extractions.
+  aiExecutionId    String?
+  aiExecution      AiExecution? @relation(fields: [aiExecutionId], references: [id])
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
+
+  @@index([aiExecutionId])
 }
 
 // ─────────────────────────────────────────────────
@@ -550,4 +559,76 @@ model EvidenceCitation {
   @@index([financialValueId])
   @@index([addBackId])
   @@index([valuationModelId])
+}
+
+// ─────────────────────────────────────────────────
+// AI EXECUTION REGISTRY (Slice 8)
+// ─────────────────────────────────────────────────
+// Every user-triggered AI flow invocation writes exactly one row here.
+// The row records who ran what, against which document versions, and
+// what came out — WITHOUT ever storing the raw prompt, the raw model
+// output, or the document bytes. The input hash is computed after
+// scrubbing data URIs and known secret keys.
+//
+// Values proposed by an AI run link back via FinancialValue.aiExecutionId,
+// so any material fact can be traced to a single execution + a single
+// prompt-template hash + a single set of source DocumentVersion IDs.
+model AiExecution {
+  id                 String   @id @default(cuid())
+  organizationId     String
+  organization       Organization @relation(fields: [organizationId], references: [id])
+  caseId             String?
+  case               Case?    @relation(fields: [caseId], references: [id])
+  userId             String
+  user               User     @relation(fields: [userId], references: [id])
+
+  // Flow identity
+  flowName           String   // 'financialDocumentExtractionFlow' | ...
+  flowVersion        String?  // human label, bumped alongside the prompt
+  promptTemplateHash String?  // sha256 of the prompt template body, auto-computed
+  promptTemplateKey  String?  // stable key that survives whitespace edits
+
+  // Model identity
+  modelProvider      String   // 'googleai'
+  modelName          String   // 'gemini-2.5-flash'
+  modelVersion       String?  // if the API exposes one
+
+  // Data provenance (never the document bytes themselves)
+  inputHash          String   // sha256 of the scrubbed canonicalized input
+  outputHash         String?  // sha256 of the canonicalized output (null on failure)
+  // JSON array of DocumentVersion ids that fed this execution. Slice 5
+  // guarantees those versions are immutable, so this list is enough to
+  // reproduce the source-document identity of any given run.
+  documentVersionIds Json?
+
+  // Timing + status
+  startedAt          DateTime @default(now())
+  completedAt        DateTime?
+  durationMs         Int?
+  status             String   @default("RUNNING") // RUNNING | SUCCESS | FAILURE
+  errorCategory      String?  // MODEL_TIMEOUT | SCHEMA_VALIDATION | RATE_LIMIT | REFUSED | INFRA | UNKNOWN
+  errorMessage       String?  @db.Text
+
+  // Cost / tokens — optional; populated when the model exposes them.
+  inputTokens        Int?
+  outputTokens       Int?
+  totalTokens        Int?
+  estimatedCostUsd   Decimal? @db.Decimal(10, 6)
+
+  // Aggregate human review of the run. Individual FinancialValue
+  // reviewStatus already tracks per-row acceptance; this column is the
+  // "execution as a whole" verdict, updated explicitly (not derived).
+  reviewStatus       String   @default("PENDING") // PENDING | ACCEPTED | REJECTED | OVERRIDDEN | MIXED
+  reviewedBy         String?
+  reviewedAt         DateTime?
+
+  createdAt          DateTime @default(now())
+
+  financialValues    FinancialValue[]
+
+  @@index([organizationId, createdAt])
+  @@index([caseId, createdAt])
+  @@index([userId])
+  @@index([flowName, createdAt])
+  @@index([status])
 }

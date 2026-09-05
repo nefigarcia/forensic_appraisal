@@ -10,6 +10,11 @@ vi.mock('@/lib/prisma', () => ({
     addBack:         { findFirst: vi.fn() },
     valuationModel:  { findFirst: vi.fn() },
     evidenceCitation:{ findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn() },
+    // Slice 8 — runFinancialExtraction wraps the AI call in withAIExecution.
+    aiExecution: {
+      create: vi.fn().mockResolvedValue({ id: 'exe-cite-1' }),
+      update: vi.fn().mockResolvedValue({}),
+    },
   },
 }))
 vi.mock('@/lib/auth-utils', () => ({ getSession: vi.fn() }))

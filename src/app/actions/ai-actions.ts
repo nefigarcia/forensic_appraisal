@@ -22,6 +22,7 @@ import {
 } from '@/lib/authz'
 import { money, moneySum, serializeMoney, formatMoney } from '@/lib/money'
 import { toEvidenceCitationData } from '@/lib/citations/from-ai'
+import { withAIExecution } from '@/lib/ai/execution'
 
 async function streamToBuffer(stream: any): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -74,16 +75,24 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
     throw new Error('Failed to retrieve document from secure storage.')
   }
 
-  const result = await extractFinancialData({
-    documentDataUri, documentName: doc.name, documentTypeHint: doc.type || 'Forensic Financial Summary',
-  })
+  // Slice 8 — wrap the AI call in the execution registry. Failures during
+  // the model call surface as an AiExecution row with status=FAILURE +
+  // errorCategory and re-throw to the caller.
+  const versionId = (doc as any).currentVersionId as string | null
+  const { output: result, executionId } = await withAIExecution(
+    {
+      session,
+      caseId,
+      flowName: 'financialDocumentExtractionFlow',
+      documentVersionIds: versionId ? [versionId] : [],
+    },
+    { documentDataUri, documentName: doc.name, documentTypeHint: doc.type || 'Forensic Financial Summary' },
+    (input) => extractFinancialData(input),
+  )
 
   if (result.extractedData?.length) {
-    // Slice 7 — attach citations to the immutable DocumentVersion (not
-    // the mutable Document). Fall back to no citation if the document has
-    // no current version yet (pre-Slice-5 backfill hasn't run).
-    const versionId = (doc as any).currentVersionId as string | null
-    // Insert values one at a time so we can attach citations by id.
+    // Insert values one at a time so we can attach citations by id and
+    // link each row back to the AiExecution that proposed it.
     for (const item of result.extractedData) {
       const v = item.value ?? 0
       const created = await prisma.financialValue.create({
@@ -102,6 +111,7 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
           currency:      item.currency      ?? 'USD',
           isVerified:    false,
           reviewStatus:  'PENDING',
+          aiExecutionId: executionId,            // Slice 8 provenance link
         },
       })
       if (versionId) {
@@ -219,13 +229,18 @@ export async function approveFinancialValues(caseId: string, statementType: stri
 // ─────────────────────────────────────────────────
 
 export async function askBinder(caseId: string, query: string) {
-  await requireCaseAccess(caseId, 'case:read')
+  const { session } = await requireCaseAccess(caseId, 'case:read')
 
   const financialData = await prisma.financialValue.findMany({ where: { caseId }, take: 50 })
-  return queryBinder({
-    query,
-    contextData: [{ documentName: 'Consolidated Forensic Ledger', extractedText: financialData.map(f => `${f.year} ${f.statementType}: ${f.lineItem} = ${f.value}`).join('\n') }],
-  })
+  const { output } = await withAIExecution(
+    { session, caseId, flowName: 'binderQueryFlow' },
+    {
+      query,
+      contextData: [{ documentName: 'Consolidated Forensic Ledger', extractedText: financialData.map(f => `${f.year} ${f.statementType}: ${f.lineItem} = ${f.value}`).join('\n') }],
+    },
+    (input) => queryBinder(input),
+  )
+  return output
 }
 
 // ─────────────────────────────────────────────────
@@ -235,7 +250,11 @@ export async function askBinder(caseId: string, query: string) {
 export async function runIndustryAnalysis(caseId: string, description: string) {
   const { session } = await requireCaseAccess(caseId, 'extraction:run')
 
-  const result = await aiIndustryCodeSuggestion({ businessDescription: description })
+  const { output: result } = await withAIExecution(
+    { session, caseId, flowName: 'aiIndustryCodeSuggestionFlow' },
+    { businessDescription: description },
+    (input) => aiIndustryCodeSuggestion(input),
+  )
   const naics  = result.industryCodes.find(c => c.type === 'NAICS')?.code
   const sic    = result.industryCodes.find(c => c.type === 'SIC')?.code
 
@@ -259,7 +278,11 @@ export async function runTtmNormalization(caseId: string) {
   const rawItems = await prisma.financialValue.findMany({ where: { caseId }, orderBy: { year: 'asc' } })
   if (!rawItems.length) throw new Error('No financial data found to normalize.')
 
-  const result = await normalizeTtmData({ rawItems: rawItems.map(i => ({ year: i.year, statementType: i.statementType, lineItem: i.lineItem, value: i.value, currency: i.currency })) })
+  const { output: result } = await withAIExecution(
+    { session, caseId, flowName: 'normalizeTtmFlow' },
+    { rawItems: rawItems.map(i => ({ year: i.year, statementType: i.statementType, lineItem: i.lineItem, value: i.value, currency: i.currency })) },
+    (input) => normalizeTtmData(input),
+  )
   await prisma.case.update({ where: { id: caseId }, data: { ttmReport: result as any } })
   await logAction({ userId: session.userId, action: 'RUN_TTM_NORMALIZATION', caseId })
   revalidatePath(`/projects/${caseId}`)
@@ -277,10 +300,14 @@ export async function runAnomalyDetection(caseId: string) {
   if (!financialData.length) throw new Error('No financial data to analyze.')
 
   const industry = await prisma.industryClassification.findUnique({ where: { caseId } })
-  const result   = await detectAnomalies({
-    financialData: financialData.map(f => ({ id: f.id, year: f.year, statementType: f.statementType, lineItem: f.lineItem, value: f.value })),
-    industryContext: industry?.suggestedIndustry,
-  })
+  const { output: result } = await withAIExecution(
+    { session, caseId, flowName: 'anomalyDetectionFlow' },
+    {
+      financialData: financialData.map(f => ({ id: f.id, year: f.year, statementType: f.statementType, lineItem: f.lineItem, value: f.value })),
+      industryContext: industry?.suggestedIndustry,
+    },
+    (input) => detectAnomalies(input),
+  )
 
   // Clear old open flags, insert new ones
   await prisma.anomalyFlag.deleteMany({ where: { caseId, status: 'OPEN' } })
@@ -316,7 +343,7 @@ export async function resolveAnomalyFlag(flagId: string, resolution: string, sta
 // ─────────────────────────────────────────────────
 
 export async function refreshCaseInsights(caseId: string) {
-  await requireCaseAccess(caseId, 'case:read')
+  const { session } = await requireCaseAccess(caseId, 'case:read')
 
   const c = await prisma.case.findUnique({
     where: { id: caseId },
@@ -339,13 +366,17 @@ export async function refreshCaseInsights(caseId: string) {
     return { score: Math.round(checks.filter(Boolean).length / checks.length * 100), missing: labels.filter((_, i) => !checks[i]) }
   })()
 
-  const result = await generateCaseInsights({
-    caseName: c.name, caseType: c.type, completeness: score, missingItems: missing,
-    documentCount: c.documents.length, dataPointCount: c.financialData.length,
-    yearsOfData: years, industry: c.industry?.suggestedIndustry,
-    anomalyCount: c.anomalyFlags.length, addBackCount: c.addBacks.length,
-    valuationCount: c.valuationModels.length,
-  })
+  const { output: result } = await withAIExecution(
+    { session, caseId, flowName: 'insightsFlow' },
+    {
+      caseName: c.name, caseType: c.type, completeness: score, missingItems: missing,
+      documentCount: c.documents.length, dataPointCount: c.financialData.length,
+      yearsOfData: years, industry: c.industry?.suggestedIndustry,
+      anomalyCount: c.anomalyFlags.length, addBackCount: c.addBacks.length,
+      valuationCount: c.valuationModels.length,
+    },
+    (input) => generateCaseInsights(input),
+  )
 
   // Replace non-dismissed insights
   await prisma.caseInsight.deleteMany({ where: { caseId, isDismissed: false } })
@@ -372,7 +403,7 @@ export async function dismissInsight(insightId: string) {
 // ─────────────────────────────────────────────────
 
 export async function draftReportSection(caseId: string, section: Parameters<typeof generateReportNarrative>[0]['section'], existingText?: string) {
-  await requireCaseAccess(caseId, 'report:generate')
+  const { session } = await requireCaseAccess(caseId, 'report:generate')
 
   const c = await prisma.case.findUnique({
     where: { id: caseId },
@@ -388,20 +419,25 @@ export async function draftReportSection(caseId: string, section: Parameters<typ
   )
   const years = [...new Set(c.financialData.map(f => f.year))].sort()
 
-  return generateReportNarrative({
-    section, caseName: c.name, caseType: c.type, clientName: c.client,
-    valuationDate:   c.valuationDate?.toISOString().split('T')[0],
-    standardOfValue: c.standardOfValue ?? 'FMV',
-    purposeOfValue:  c.purposeOfValue ?? undefined,
-    industry:        c.industry?.suggestedIndustry,
-    naicsCode:       c.industry?.naicsCode ?? undefined,
-    concludedValue:  latestModel?.indicatedValue ?? undefined,
-    ebitda:          latestModel?.ebitda ?? undefined,
-    multiplier:      latestModel?.multiplier ?? undefined,
-    financialSummary: `${years.length} years of data (${years.join(', ')})`,
-    addBackSummary:  `${c.addBacks.length} add-backs, total TTM: ${formatMoney(addBackTotalD)}`,
-    existingText,
-  })
+  const { output } = await withAIExecution(
+    { session, caseId, flowName: 'reportNarrativeFlow' },
+    {
+      section, caseName: c.name, caseType: c.type, clientName: c.client,
+      valuationDate:   c.valuationDate?.toISOString().split('T')[0],
+      standardOfValue: c.standardOfValue ?? 'FMV',
+      purposeOfValue:  c.purposeOfValue ?? undefined,
+      industry:        c.industry?.suggestedIndustry,
+      naicsCode:       c.industry?.naicsCode ?? undefined,
+      concludedValue:  latestModel?.indicatedValue ?? undefined,
+      ebitda:          latestModel?.ebitda ?? undefined,
+      multiplier:      latestModel?.multiplier ?? undefined,
+      financialSummary: `${years.length} years of data (${years.join(', ')})`,
+      addBackSummary:  `${c.addBacks.length} add-backs, total TTM: ${formatMoney(addBackTotalD)}`,
+      existingText,
+    },
+    (input) => generateReportNarrative(input),
+  )
+  return output
 }
 
 // ─────────────────────────────────────────────────
