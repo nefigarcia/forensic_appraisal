@@ -346,10 +346,22 @@ model AuditLog {
   note        String?  @db.Text
   ipAddress   String?
   createdAt   DateTime @default(now())
+  // ── Slice 6: tamper-evident hash chain ───────────────────────────────
+  // Rows written before Slice 6 have all of these NULL and are treated by
+  // the verifier as "pre-chain" (skipped, not counted as tamper). New
+  // events form a chain keyed by `chainKey` and ordered by `sequence`.
+  // `eventHash` = SHA-256(canonicalPayload including previousHash).
+  chainKey     String?  // 'org:<id>' | 'global:anon'
+  sequence     Int?     // per-chainKey monotonic; enforced by @@unique below
+  previousHash String?  @db.VarChar(64)   // hex sha-256, or null for the genesis row
+  eventHash    String?  @db.VarChar(64)
+  hashVersion  String?  @db.VarChar(8)    // 'v1' for the current canonical format
 
   @@index([caseId, createdAt])
   @@index([userId])
   @@index([action, createdAt])
+  @@index([chainKey, sequence])
+  @@unique([chainKey, sequence], name: "AuditLog_chainKey_sequence_key")
 }
 
 // ─────────────────────────────────────────────────

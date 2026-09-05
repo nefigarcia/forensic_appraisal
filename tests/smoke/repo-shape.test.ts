@@ -1,9 +1,27 @@
 import { describe, it, expect } from 'vitest'
-import { existsSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { resolve, join } from 'node:path'
 
 const root = resolve(__dirname, '..', '..')
 const p = (rel: string) => resolve(root, rel)
+
+/** Recursively list .ts / .tsx files under a repo-relative path. */
+function tsFilesUnder(rel: string): string[] {
+  const out: string[] = []
+  function walk(abs: string) {
+    for (const entry of readdirSync(abs)) {
+      const full = join(abs, entry)
+      const stat = statSync(full)
+      if (stat.isDirectory()) walk(full)
+      else if (/\.(ts|tsx)$/.test(entry)) {
+        // Return the repo-relative path, using forward slashes.
+        out.push(full.slice(root.length + 1).split(/[\\/]/).join('/'))
+      }
+    }
+  }
+  walk(p(rel))
+  return out
+}
 
 /**
  * Contract-shape smoke test. Guards against silent moves/renames of
@@ -76,8 +94,29 @@ describe('repository shape (Slice 0 baseline)', () => {
     'scripts/migrate-documents-to-versions.ts',
     'docs/migrations/slice-5-document-versioning.sql',
     'docs/architecture/DOCUMENT_VERSIONING.md',
+    // Slice 6 — tamper-evident audit chain
+    'src/lib/audit-chain.ts',
+    'src/app/actions/audit-integrity.ts',
+    'src/components/audit-integrity-badge.tsx',
+    'docs/migrations/slice-6-audit-chain.sql',
+    'docs/architecture/AUDIT_CHAIN.md',
   ])('exists: %s', (rel) => {
     expect(existsSync(p(rel))).toBe(true)
+  })
+
+  // ─────────────────────────────────────────────────
+  // Slice 6 — the audit ledger is append-only through app logic.
+  // No server-side code path may call auditLog.update or auditLog.delete.
+  // (Manual DB edits are outside the app layer; the hash chain detects them.)
+  // ─────────────────────────────────────────────────
+  it('no application code calls auditLog.update or auditLog.delete', () => {
+    const forbidden = /prisma\.auditLog\.(update|delete)/
+    const violations: string[] = []
+    for (const rel of tsFilesUnder('src')) {
+      const source = readFileSync(p(rel), 'utf8')
+      if (forbidden.test(source)) violations.push(rel)
+    }
+    expect(violations).toEqual([])
   })
 
   it('every action file starts with the "use server" directive', () => {
@@ -100,6 +139,7 @@ describe('repository shape (Slice 0 baseline)', () => {
   })
 
   it('the Prisma schema still declares the eleven baseline models', () => {
+    // (used above by the append-only test as well)
     const schema = readFileSync(p('prisma/schema.prisma'), 'utf8')
     for (const model of [
       'Organization', 'User', 'Case', 'Document', 'FinancialValue',

@@ -57,6 +57,7 @@ import { AIThinkingDialog, AI_MESSAGES } from "@/components/ai-thinking-dialog"
 import { ConfidenceBadge } from "@/components/confidence-badge"
 import { OverrideDialog } from "@/components/override-dialog"
 import { AuditLogPanel } from "@/components/audit-log-panel"
+import { AuditIntegrityBadge } from "@/components/audit-integrity-badge"
 import { AddBackSchedule } from "@/components/add-back-schedule"
 import { getExternalConnections } from "@/app/actions/connectors"
 import { toast } from "@/hooks/use-toast"
@@ -1456,6 +1457,7 @@ export default function ProjectDetail() {
                   <h2 className="text-2xl font-black text-primary tracking-tight">Audit Trail</h2>
                   <p className="text-sm text-muted-foreground font-medium">Immutable chain-of-custody log for all case actions.</p>
                 </div>
+                <AuditIntegrityBadge />
                 <Card className="border-none shadow-sm bg-white overflow-hidden">
                   <CardContent className="pt-6">
                     <AuditLogPanel caseId={id as string} />
