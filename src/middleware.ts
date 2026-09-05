@@ -1,22 +1,26 @@
 
-import { NextRequest, NextResponse } from 'next/server';
-import { getSession } from './lib/auth-utils';
+import { NextRequest, NextResponse } from 'next/server'
+import { isJwtSignedAndUnexpired, SESSION_COOKIE_NAME } from './lib/auth-edge'
 
 export async function middleware(request: NextRequest) {
-  const session = await getSession();
-  
-  const publicPaths = ['/', '/login', '/signup'];
-  const isPublicPath = publicPaths.includes(request.nextUrl.pathname);
+  // Edge-safe presence check: we only verify signature + expiry here. The
+  // DB-backed revocation and password-changed checks happen inside
+  // `getSession()` at the action layer.
+  const raw = request.cookies.get(SESSION_COOKIE_NAME)?.value
+  const hasSession = await isJwtSignedAndUnexpired(raw)
 
-  if (!session && !isPublicPath) {
-    return NextResponse.redirect(new URL('/login', request.url));
+  const publicPaths = ['/', '/login', '/signup']
+  const isPublicPath = publicPaths.includes(request.nextUrl.pathname)
+
+  if (!hasSession && !isPublicPath) {
+    return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (session && isPublicPath && request.nextUrl.pathname !== '/') {
-    return NextResponse.redirect(new URL('/dashboard', request.url));
+  if (hasSession && isPublicPath && request.nextUrl.pathname !== '/') {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
-  return NextResponse.next();
+  return NextResponse.next()
 }
 
 export const config = {
@@ -25,4 +29,4 @@ export const config = {
   matcher: [
     '/((?!api/webhooks|api|_next/static|_next/image|favicon.ico|landing|videos|.*\\.(?:webp|png|jpg|jpeg|svg|gif|ico|mp4|webm|css|js|woff2?|ttf|otf)$).*)',
   ],
-};
+}

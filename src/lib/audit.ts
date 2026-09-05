@@ -6,6 +6,7 @@
 import { prisma } from '@/lib/prisma'
 
 export type AuditAction =
+  // Case + data lifecycle
   | 'CREATE_CASE'
   | 'UPDATE_CASE'
   | 'DELETE_CASE'
@@ -29,11 +30,25 @@ export type AuditAction =
   | 'RESOLVE_FLAG'
   | 'RUN_INDUSTRY_ANALYSIS'
   | 'RUN_TTM_NORMALIZATION'
-  | 'LOGIN'
+  // Auth events (Slice 2)
+  | 'LOGIN'                    // legacy alias for LOGIN_SUCCESS; kept for compat
+  | 'LOGIN_SUCCESS'
+  | 'LOGIN_FAIL'
+  | 'LOGIN_RATE_LIMITED'
   | 'LOGOUT'
+  | 'PASSWORD_CHANGED'
+  | 'PASSWORD_RESET_REQUESTED'
+  | 'PASSWORD_RESET_COMPLETED'
+  | 'EMAIL_VERIFICATION_SENT'
+  | 'EMAIL_VERIFIED'
+  | 'MFA_ENROLLED'
+  | 'MFA_DISABLED'
+  | 'SESSION_REVOKED'
+  | 'SIGNUP'
 
 export interface LogParams {
-  userId: string
+  /** May be null for pre-auth events (e.g. LOGIN_FAIL for an unknown email). */
+  userId: string | null
   action: AuditAction
   caseId?: string
   targetModel?: string
@@ -48,7 +63,7 @@ export async function logAction(params: LogParams): Promise<void> {
   try {
     await prisma.auditLog.create({
       data: {
-        userId:      params.userId,
+        userId:      params.userId ?? null,
         action:      params.action,
         caseId:      params.caseId,
         targetModel: params.targetModel,

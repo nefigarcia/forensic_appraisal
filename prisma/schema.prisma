@@ -41,6 +41,15 @@ model User {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
   auditLogs      AuditLog[]
+  // Slice 2 — auth hardening
+  emailVerifiedAt         DateTime?
+  passwordChangedAt       DateTime?
+  mfaEnabled              Boolean                  @default(false)
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  sessionRevocations      SessionRevocation[]
+  mfaSecret               MfaSecret?
+  mfaBackupCodes          MfaBackupCode[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 }
@@ -245,9 +254,10 @@ model AuditLog {
   id          String   @id @default(cuid())
   caseId      String?
   case        Case?    @relation(fields: [caseId], references: [id])
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  action      String   // UPLOAD_DOC | RUN_EXTRACTION | ACCEPT_VALUE | OVERRIDE_VALUE | REJECT_VALUE | LOCK_VALUE | APPROVE_BATCH | CREATE_CASE | GENERATE_REPORT | RUN_ANOMALY | etc.
+  // Slice 2 — auth events like LOGIN_FAIL for an unknown email have no user.
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  action      String   // UPLOAD_DOC | RUN_EXTRACTION | ACCEPT_VALUE | OVERRIDE_VALUE | REJECT_VALUE | LOCK_VALUE | APPROVE_BATCH | CREATE_CASE | GENERATE_REPORT | RUN_ANOMALY | LOGIN_* | LOGOUT | PASSWORD_* | etc.
   targetModel String?  // "FinancialValue" | "Document" | "AddBack" | "ValuationModel"
   targetId    String?
   oldValue    String?  @db.Text  // JSON
@@ -258,6 +268,7 @@ model AuditLog {
 
   @@index([caseId, createdAt])
   @@index([userId])
+  @@index([action, createdAt])
 }
 
 // ─────────────────────────────────────────────────
@@ -278,4 +289,87 @@ model ExternalConnector {
   updatedAt      DateTime     @updatedAt
 
   @@unique([organizationId, provider])
+}
+
+// ─────────────────────────────────────────────────
+// AUTH HARDENING (Slice 2)
+// ─────────────────────────────────────────────────
+
+// Records the jti of each revoked session JWT so getSession() can reject
+// cookies that are otherwise cryptographically valid. Rows are pruned
+// after their originating token's natural expiry.
+model SessionRevocation {
+  jti        String   @id                    // JWT jti
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  reason     String                          // LOGOUT | PASSWORD_CHANGE | ADMIN | SUSPICIOUS
+  revokedAt  DateTime @default(now())
+  expiresAt  DateTime                        // when the underlying JWT would've expired
+
+  @@index([expiresAt])
+  @@index([userId])
+}
+
+// SHA-256(raw token) is the primary key — the raw token exists only in
+// the outgoing email. Consumed tokens are retained (audit trail) but
+// cannot be re-used because of the consumedAt check.
+model PasswordResetToken {
+  tokenHash  String    @id
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model EmailVerificationToken {
+  tokenHash  String    @id
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+// One row per real login attempt (rejected-by-rate-limit attempts do NOT
+// write here — they only emit an AuditLog LOGIN_RATE_LIMITED event).
+// Used by the rate limiter and by anomaly-detection dashboards.
+model LoginAttempt {
+  id         String   @id @default(cuid())
+  email      String                          // normalized lowercase
+  ipAddress  String?
+  ok         Boolean
+  reason     String?                         // BAD_PASSWORD | UNKNOWN_USER | MFA_FAIL
+  createdAt  DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([createdAt])
+}
+
+// TOTP shared secret. verifiedAt remains null while enrollment is
+// pending; a successful first code sets it.
+model MfaSecret {
+  userId     String    @id
+  user       User      @relation(fields: [userId], references: [id])
+  secret     String                          // base32 TOTP shared secret
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+// Single-use recovery codes; codeHash = SHA-256(plaintext). Used codes
+// are retained for audit but cannot be re-consumed.
+model MfaBackupCode {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }

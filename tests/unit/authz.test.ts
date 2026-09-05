@@ -53,7 +53,9 @@ describe('requireSession', () => {
   })
 
   it('throws UnauthorizedError when the payload is missing organizationId', async () => {
-    vi.mocked(getSession).mockResolvedValue({ userId: 'u', role: 'ADMIN', email: 'x' })
+    // Intentionally malformed to prove requireSession's defensive check —
+    // cast bypasses the type so TS accepts the deliberately-invalid shape.
+    vi.mocked(getSession).mockResolvedValue({ userId: 'u', role: 'ADMIN', email: 'x' } as any)
     await expect(requireSession()).rejects.toBeInstanceOf(UnauthorizedError)
   })
 

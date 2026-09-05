@@ -40,6 +40,19 @@ describe('repository shape (Slice 0 baseline)', () => {
     'src/ai/flows/insights-flow.ts',
     'src/ai/flows/normalize-ttm-flow.ts',
     'src/ai/flows/report-narrative-flow.ts',
+    // Slice 2 — auth hardening
+    'src/lib/env.ts',
+    'src/lib/session.ts',
+    'src/lib/mailer.ts',
+    'src/lib/auth/passwords.ts',
+    'src/lib/auth/tokens.ts',
+    'src/lib/auth/rate-limit.ts',
+    'src/lib/auth/mfa.ts',
+    'src/lib/auth/redirect.ts',
+    'src/app/actions/password-reset.ts',
+    'src/app/actions/email-verification.ts',
+    'src/app/api/verify-email/[token]/route.ts',
+    'docs/migrations/slice-2-auth-hardening.sql',
   ])('exists: %s', (rel) => {
     expect(existsSync(p(rel))).toBe(true)
   })
@@ -53,6 +66,8 @@ describe('repository shape (Slice 0 baseline)', () => {
       'src/app/actions/ai-actions.ts',
       'src/app/actions/billing-actions.ts',
       'src/app/actions/connectors.ts',
+      'src/app/actions/password-reset.ts',
+      'src/app/actions/email-verification.ts',
     ]
     for (const rel of actionFiles) {
       const head = readFileSync(p(rel), 'utf8').slice(0, 40)
@@ -66,6 +81,9 @@ describe('repository shape (Slice 0 baseline)', () => {
       'Organization', 'User', 'Case', 'Document', 'FinancialValue',
       'AddBack', 'IndustryClassification', 'ValuationModel',
       'AnomalyFlag', 'CaseInsight', 'AuditLog', 'ExternalConnector',
+      // Slice 2
+      'SessionRevocation', 'PasswordResetToken', 'EmailVerificationToken',
+      'LoginAttempt', 'MfaSecret', 'MfaBackupCode',
     ]) {
       expect(schema).toMatch(new RegExp(`\\bmodel\\s+${model}\\s*\\{`))
     }
