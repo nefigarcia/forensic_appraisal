@@ -171,6 +171,21 @@ export async function requireCaseInsightAccess(insightId: string, permission?: P
   return { session, insight: record }
 }
 
+/** Verify a DocumentVersion belongs to a document in a case in the caller's org. */
+export async function requireDocumentVersionAccess(versionId: string, permission?: Permission) {
+  const session = await requireSession()
+  const record = await prisma.documentVersion.findFirst({
+    where: {
+      id: versionId,
+      document: { case: { organizationId: session.organizationId } },
+    },
+    include: { document: { select: { id: true, caseId: true, isArchived: true } } },
+  })
+  if (!record) throw new NotFoundError()
+  if (permission) requirePermission(session, permission)
+  return { session, version: record }
+}
+
 /** Verify an ExternalConnector belongs directly to the caller's org. */
 export async function requireConnectorAccess(connectorId: string, permission?: Permission) {
   const session = await requireSession()

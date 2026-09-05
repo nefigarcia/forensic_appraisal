@@ -67,6 +67,15 @@ describe('repository shape (Slice 0 baseline)', () => {
     'src/lib/valuation.ts',
     'scripts/migrate-money-to-decimal.ts',
     'docs/migrations/slice-4-decimal-money.sql',
+    // Slice 5 — immutable evidence
+    'src/lib/documents/validation.ts',
+    'src/lib/documents/versioning.ts',
+    'src/lib/documents/scanner.ts',
+    'src/app/actions/document-versions.ts',
+    'src/components/document-version-history.tsx',
+    'scripts/migrate-documents-to-versions.ts',
+    'docs/migrations/slice-5-document-versioning.sql',
+    'docs/architecture/DOCUMENT_VERSIONING.md',
   ])('exists: %s', (rel) => {
     expect(existsSync(p(rel))).toBe(true)
   })
@@ -82,6 +91,7 @@ describe('repository shape (Slice 0 baseline)', () => {
       'src/app/actions/connectors.ts',
       'src/app/actions/password-reset.ts',
       'src/app/actions/email-verification.ts',
+      'src/app/actions/document-versions.ts',
     ]
     for (const rel of actionFiles) {
       const head = readFileSync(p(rel), 'utf8').slice(0, 40)

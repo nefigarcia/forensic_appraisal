@@ -51,6 +51,7 @@ import Link from "next/link"
 import { useParams } from "next/navigation"
 import { getCaseDetails } from "@/app/actions/cases"
 import { addDocument } from "@/app/actions/documents"
+import { DocumentVersionHistory } from "@/components/document-version-history"
 import { runFinancialExtraction, runIndustryAnalysis, updateFinancialValue, approveFinancialValues, askBinder, runTtmNormalization, acceptFinancialValue, overrideFinancialValue, rejectFinancialValue, toggleLockFinancialValue, runAnomalyDetection, resolveAnomalyFlag, refreshCaseInsights, draftReportSection } from "@/app/actions/ai-actions"
 import { AIThinkingDialog, AI_MESSAGES } from "@/components/ai-thinking-dialog"
 import { ConfidenceBadge } from "@/components/confidence-badge"
@@ -737,15 +738,18 @@ export default function ProjectDetail() {
                                 <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">{doc.size} • {format(new Date(doc.createdAt), 'MMM d, yyyy')}</p>
                               </div>
                             </div>
-                            <Badge 
-                              variant='outline' 
-                              className={cn(
-                                "text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-full",
-                                doc.status === "EXTRACTED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-blue-50 text-blue-700 border-blue-200"
-                              )}
-                            >
-                              {doc.status || "VERIFIED"}
-                            </Badge>
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant='outline'
+                                className={cn(
+                                  "text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-full",
+                                  doc.status === "EXTRACTED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-blue-50 text-blue-700 border-blue-200"
+                                )}
+                              >
+                                {doc.status || "VERIFIED"}
+                              </Badge>
+                              <DocumentVersionHistory documentId={doc.id} documentName={doc.name} />
+                            </div>
                           </div>
                         ))}
                         {caseData.documents.length === 0 && (

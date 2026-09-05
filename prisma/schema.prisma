@@ -96,11 +96,65 @@ model Document {
   type           String
   size           String
   s3Key          String?
-  sha256Hash     String?          // tamper-evident integrity hash
+  sha256Hash     String?          // tamper-evident integrity hash of the current version
   status         String           @default("PENDING") // PENDING | EXTRACTED | VERIFIED | REJECTED
   pageCount      Int?
   financialValues FinancialValue[]
+  // ── Slice 5: versioning + archival ───────────────────────────────────
+  // Denormalized pointer to the latest non-archived DocumentVersion. Kept
+  // in sync by addDocument; readers that only need the current file can
+  // continue to use Document.s3Key / Document.sha256Hash without joining.
+  currentVersionId String?
+  currentVersion   DocumentVersion? @relation("CurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  versions         DocumentVersion[] @relation("DocumentVersions")
+  // Soft-delete flag. deleteDocument sets this true; the row and S3 objects
+  // are retained (chain of custody). A future admin-only hard-delete slice
+  // can add real destruction with legal-hold checks.
+  isArchived       Boolean          @default(false)
+  archivedAt       DateTime?
+  archivedBy       String?
+  archiveReason    String?          @db.Text
   createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([caseId, isArchived])
+}
+
+// Immutable per-upload version. Every re-upload creates a new row —
+// existing rows are never updated except to flip `isArchived`. The pair
+// (documentId, versionNumber) is a stable public identifier.
+model DocumentVersion {
+  id            String   @id @default(cuid())
+  documentId    String
+  document      Document @relation("DocumentVersions", fields: [documentId], references: [id], onDelete: Cascade)
+  versionNumber Int      // 1, 2, 3… per document
+  s3Key         String   // orgs/<org>/cases/<case>/documents/<doc>/versions/<n>/<name>
+  sha256Hash    String   // per-version — independent of any other version's hash
+  sizeBytes     BigInt
+  mimeType      String   // detected via magic-byte sniff, not client-declared
+  originalName  String   // the filename as the analyst uploaded it
+  uploadedBy    String   // userId (nullable string for legacy backfill placeholder)
+  uploadedAt    DateTime @default(now())
+
+  // Malware scan hook — populated asynchronously by the scanner. NullScanner
+  // (default) transitions PENDING → CLEAN on upload; a real scanner would
+  // enqueue a job and update later. INFECTED versions cannot be downloaded.
+  scanStatus    String   @default("PENDING") // PENDING | SCANNING | CLEAN | INFECTED | ERROR
+  scanReport    String?  @db.Text
+  scannedAt     DateTime?
+
+  // Soft-delete at the version level. Archiving a version does not archive
+  // its parent Document; it only hides that specific upload.
+  isArchived    Boolean  @default(false)
+  archivedAt    DateTime?
+  archivedBy    String?
+  archiveReason String?  @db.Text
+
+  currentFor    Document[] @relation("CurrentVersion")
+
+  @@unique([documentId, versionNumber])
+  @@index([sha256Hash])
+  @@index([documentId, isArchived])
 }
 
 // ─────────────────────────────────────────────────
