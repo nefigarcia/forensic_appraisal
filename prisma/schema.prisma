@@ -280,8 +280,18 @@ model ExternalConnector {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
   provider       String
+  // Legacy plaintext columns retained during migration to envelope encryption.
+  // Cleared on every new write by encryptConnectorSecrets(). Rows that still
+  // carry plaintext here have not yet been passed through the Slice 3
+  // migration script.
   accessToken    String?      @db.Text
   refreshToken   String?      @db.Text
+  // Slice 3 — envelope-encrypted secrets.
+  // Shape: { version: 'v1', secrets: { <name>: { ciphertext, dek } } }
+  encryptedSecrets     Json?
+  // Which KEK produced the wrap ('kms:<arn>' or 'local-v1'); used by
+  // rotation queries to find rows still keyed to an old KEK.
+  encryptionKeyVersion String?
   expiresAt      DateTime?
   status         String       @default("CONNECTED")
   lastSync       DateTime?    @default(now())
@@ -289,6 +299,7 @@ model ExternalConnector {
   updatedAt      DateTime     @updatedAt
 
   @@unique([organizationId, provider])
+  @@index([encryptionKeyVersion])
 }
 
 // ─────────────────────────────────────────────────

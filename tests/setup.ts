@@ -17,3 +17,7 @@ process.env.STRIPE_WEBHOOK_SECRET ??= 'whsec_test'
 process.env.JWT_SECRET            ??= 'test-jwt-secret-at-least-32-chars-long'
 process.env.DATABASE_URL          ??= 'mysql://test:test@localhost:3306/test'
 process.env.NEXT_PUBLIC_APP_URL   ??= 'http://localhost:9002'
+// Slice 3 — 32-byte deterministic KEK for tests so envelope encrypt/decrypt
+// round-trips work across process boundaries. Never used in production; the
+// KMS provider takes precedence when AWS_KMS_KEY_ID is set.
+process.env.CONNECTOR_KEK_B64     ??= 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8='

@@ -6,6 +6,20 @@ baseline now routes through the central helpers in `src/lib/authz.ts`.
 Sections marked *(Slice 1)* record what changed; the rest of the document
 remains as the historical baseline so future slices can see the delta.
 
+## Slice 3 update — 2026-09-04 (connector credential protection)
+
+- `getExternalConnections` now selects via `CONNECTOR_METADATA_SELECT` —
+  `accessToken`, `refreshToken`, `encryptedSecrets`, and
+  `encryptionKeyVersion` never enter the return type, so tokens cannot
+  leak to a client component through this action.
+- New server-side accessor `getDecryptedAccessTokenForProvider(provider)`
+  is org-scoped and returns plaintext ONLY for use by other server actions
+  (e.g. `documents.ts` Microsoft Graph mirror). Never called from a client.
+- `saveOAuthToken` writes envelope-encrypted secrets and always nulls the
+  legacy plaintext columns on the same `upsert`.
+- Microsoft OAuth `state` is now bound per-request via an HttpOnly
+  `oauth_state` cookie; callback rejects on mismatch or missing cookie.
+
 ## Slice 1 update — 2026-09-04
 
 - Added `src/lib/authz.ts` with `requireSession`, `requireOrganization`,

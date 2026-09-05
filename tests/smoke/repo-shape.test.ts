@@ -53,6 +53,15 @@ describe('repository shape (Slice 0 baseline)', () => {
     'src/app/actions/email-verification.ts',
     'src/app/api/verify-email/[token]/route.ts',
     'docs/migrations/slice-2-auth-hardening.sql',
+    // Slice 3 — connector credential protection
+    'src/lib/crypto/kek.ts',
+    'src/lib/crypto/envelope.ts',
+    'src/lib/crypto/connector-secrets.ts',
+    'src/lib/oauth-state.ts',
+    'scripts/migrate-connector-secrets.ts',
+    'docs/migrations/slice-3-connector-encryption.sql',
+    'docs/architecture/CONNECTOR_ENCRYPTION.md',
+    'docs/architecture/MICROSOFT_OAUTH_SCOPES.md',
   ])('exists: %s', (rel) => {
     expect(existsSync(p(rel))).toBe(true)
   })

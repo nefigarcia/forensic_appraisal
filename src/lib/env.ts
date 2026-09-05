@@ -54,6 +54,12 @@ const schema = z.object({
 
   // AI (Genkit / Google GenAI)
   GOOGLE_GENAI_API_KEY: z.string().optional(),
+
+  // Slice 3 — connector credential envelope encryption
+  // Production requires AWS_KMS_KEY_ID (KMS-backed KEK).
+  // Dev/test can use CONNECTOR_KEK_B64 (32 bytes base64) — a local AES-256 KEK.
+  AWS_KMS_KEY_ID:      z.string().optional(),
+  CONNECTOR_KEK_B64:   z.string().optional(),
 })
 
 export type Env = z.infer<typeof schema>

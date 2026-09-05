@@ -7,6 +7,7 @@ import { s3Client, BUCKET_NAME } from '@/lib/s3-client'
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
 import { createHash } from 'crypto'
 import { requireCaseAccess, requireDocumentAccess } from '@/lib/authz'
+import { decryptConnectorSecret } from '@/lib/crypto/connector-secrets'
 
 export async function addDocument(caseId: string, formData: FormData) {
   const { session } = await requireCaseAccess(caseId, 'document:upload')
@@ -35,13 +36,23 @@ export async function addDocument(caseId: string, formData: FormData) {
       const connector = await prisma.externalConnector.findUnique({
         where: { organizationId_provider: { organizationId: session.organizationId, provider: storageProvider } },
       })
-      if (connector?.accessToken && storageProvider === 'microsoft') {
-        try {
-          await fetch(
-            `https://graph.microsoft.com/v1.0/me/drive/root:/ValuVault_Archive/${caseId}/${file.name}:/content`,
-            { method: 'PUT', headers: { Authorization: `Bearer ${connector.accessToken}`, 'Content-Type': file.type }, body: buffer },
-          )
-        } catch (e) { console.error('Mirror failed:', e) }
+      if (connector && storageProvider === 'microsoft') {
+        // Decrypt only immediately before use; the plaintext lives in a
+        // local variable until the fetch completes, never persisted, never
+        // logged.
+        const accessToken = await decryptConnectorSecret(connector, 'accessToken')
+        if (accessToken) {
+          try {
+            await fetch(
+              `https://graph.microsoft.com/v1.0/me/drive/root:/ValuVault_Archive/${caseId}/${encodeURIComponent(file.name)}:/content`,
+              { method: 'PUT', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': file.type }, body: buffer },
+            )
+          } catch (e) {
+            // NEVER include the connector token in a log line. Error from
+            // fetch does not carry headers, but we stringify defensively.
+            console.error('[documents] Microsoft Graph mirror failed:', (e as Error).message)
+          }
+        }
       }
     }
 
