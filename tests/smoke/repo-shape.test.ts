@@ -62,6 +62,11 @@ describe('repository shape (Slice 0 baseline)', () => {
     'docs/migrations/slice-3-connector-encryption.sql',
     'docs/architecture/CONNECTOR_ENCRYPTION.md',
     'docs/architecture/MICROSOFT_OAUTH_SCOPES.md',
+    // Slice 4 — decimal-safe financial domain
+    'src/lib/money.ts',
+    'src/lib/valuation.ts',
+    'scripts/migrate-money-to-decimal.ts',
+    'docs/migrations/slice-4-decimal-money.sql',
   ])('exists: %s', (rel) => {
     expect(existsSync(p(rel))).toBe(true)
   })

@@ -9,6 +9,8 @@ import {
   requirePermission,
   requireCaseAccess,
 } from '@/lib/authz'
+import { money, serializeMoney, moneyMul } from '@/lib/money'
+import { computeDcf, computeWacc, marketApproachValue, reconcileValues } from '@/lib/valuation'
 
 export async function getCases() {
   let session
@@ -102,9 +104,104 @@ export async function saveValuation(
 ) {
   const { session } = await requireCaseAccess(caseId, 'valuation:write')
 
-  const model = await prisma.valuationModel.create({ data: { caseId, ...data } })
+  // ── Slice 4: authoritative server-side Decimal recompute ─────────────────
+  // The client sends its own advisory `indicatedValue` computed with JS
+  // floats. We ignore that and recompute here using Prisma.Decimal so the
+  // stored concluded value is exact. UI display of a slightly different
+  // preview is harmless; storage is what matters for the forensic report.
+  const ebitdaD    = money(data.ebitda    ?? 0)
+  const multipleD  = money(data.multiplier ?? 0)
+  const marketValueD = marketApproachValue(ebitdaD, multipleD)
 
-  await logAction({ userId: session.userId, action: 'SAVE_VALUATION', caseId, targetModel: 'ValuationModel', targetId: model.id, newValue: data })
+  let dcfIndicatedD = money(0)
+  const hasDcfInputs =
+    data.dcfYear1 !== undefined || data.dcfYear2 !== undefined ||
+    data.dcfYear3 !== undefined || data.dcfYear4 !== undefined ||
+    data.dcfYear5 !== undefined
+  if (hasDcfInputs && data.discountRate !== undefined && data.terminalGrowth !== undefined) {
+    try {
+      const dcf = computeDcf({
+        cashflows:      [data.dcfYear1, data.dcfYear2, data.dcfYear3, data.dcfYear4, data.dcfYear5].map(v => v ?? 0),
+        discountRate:   data.discountRate,
+        terminalGrowth: data.terminalGrowth,
+      })
+      dcfIndicatedD = dcf.indicatedValue
+    } catch (e) {
+      // discountRate ≤ terminalGrowth diverges; fall back to market-only.
+      dcfIndicatedD = money(0)
+    }
+  }
+
+  // Reconcile market and DCF using the client's weight if present, else
+  // 100 % market. Weight is expressed on the same scale the UI used.
+  const marketWeight = money(data.weight ?? 100)
+  const indicatedD = hasDcfInputs
+    ? reconcileValues([
+        { value: marketValueD,  weight: marketWeight },
+        { value: dcfIndicatedD, weight: money(100).minus(marketWeight) },
+      ])
+    : marketValueD
+
+  const waccD = computeWacc({
+    riskFreeRate:      data.riskFreeRate,
+    equityRiskPremium: data.equityRiskPremium,
+    sizePremium:       data.sizePremium,
+    specificRisk:      data.specificRisk,
+  })
+  void waccD // Not persisted separately; components live on the model.
+
+  // ── Dual-write: Float columns for legacy UI, Decimal columns as truth ─
+  const model = await prisma.valuationModel.create({
+    data: {
+      caseId,
+      valuationType:      data.valuationType,
+      label:              data.label,
+      reconciliationNote: data.reconciliationNote,
+      // Float legacy columns (kept during migration window)
+      ebitda:             data.ebitda,
+      multiplier:         data.multiplier,
+      growthRate:         data.growthRate,
+      dcfYear1:           data.dcfYear1,
+      dcfYear2:           data.dcfYear2,
+      dcfYear3:           data.dcfYear3,
+      dcfYear4:           data.dcfYear4,
+      dcfYear5:           data.dcfYear5,
+      terminalGrowth:     data.terminalGrowth,
+      discountRate:       data.discountRate,
+      riskFreeRate:       data.riskFreeRate,
+      equityRiskPremium:  data.equityRiskPremium,
+      sizePremium:        data.sizePremium,
+      specificRisk:       data.specificRisk,
+      weight:             data.weight,
+      indicatedValue:     Number(indicatedD.toFixed(4)),
+      // Decimal shadow columns (authoritative)
+      ebitdaDecimal:            data.ebitda            != null ? ebitdaD                    : null,
+      multiplierDecimal:        data.multiplier        != null ? multipleD                  : null,
+      growthRateDecimal:        data.growthRate        != null ? money(data.growthRate)     : null,
+      dcfYear1Decimal:          data.dcfYear1          != null ? money(data.dcfYear1)       : null,
+      dcfYear2Decimal:          data.dcfYear2          != null ? money(data.dcfYear2)       : null,
+      dcfYear3Decimal:          data.dcfYear3          != null ? money(data.dcfYear3)       : null,
+      dcfYear4Decimal:          data.dcfYear4          != null ? money(data.dcfYear4)       : null,
+      dcfYear5Decimal:          data.dcfYear5          != null ? money(data.dcfYear5)       : null,
+      terminalGrowthDecimal:    data.terminalGrowth    != null ? money(data.terminalGrowth) : null,
+      discountRateDecimal:      data.discountRate      != null ? money(data.discountRate)   : null,
+      riskFreeRateDecimal:      data.riskFreeRate      != null ? money(data.riskFreeRate)   : null,
+      equityRiskPremiumDecimal: data.equityRiskPremium != null ? money(data.equityRiskPremium) : null,
+      sizePremiumDecimal:       data.sizePremium       != null ? money(data.sizePremium)    : null,
+      specificRiskDecimal:      data.specificRisk      != null ? money(data.specificRisk)   : null,
+      weightDecimal:            data.weight            != null ? money(data.weight)         : null,
+      indicatedValueDecimal:    indicatedD,
+    },
+  })
+
+  await logAction({
+    userId: session.userId, action: 'SAVE_VALUATION', caseId,
+    targetModel: 'ValuationModel', targetId: model.id,
+    newValue: {
+      ...data,
+      indicatedValue: serializeMoney(indicatedD),   // authoritative for the audit trail
+    },
+  })
 
   revalidatePath(`/projects/${caseId}/valuation`)
   return model

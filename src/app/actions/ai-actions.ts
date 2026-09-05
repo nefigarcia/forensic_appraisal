@@ -20,6 +20,7 @@ import {
   requireCaseInsightAccess,
   NotFoundError,
 } from '@/lib/authz'
+import { money, moneySum, serializeMoney, formatMoney } from '@/lib/money'
 
 async function streamToBuffer(stream: any): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -78,20 +79,25 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
 
   if (result.extractedData?.length) {
     await prisma.financialValue.createMany({
-      data: result.extractedData.map((item) => ({
-        caseId,
-        documentId: doc.id,
-        year:          item.year          ?? 'Unknown',
-        statementType: item.statementType ?? 'N/A',
-        lineItem:      item.lineItem,
-        value:         item.value         ?? 0,
-        aiSuggestedValue: item.value      ?? 0,
-        confidence:    item.confidence    ?? 0.8,
-        sourceRef:     item.sourceRef,
-        currency:      item.currency      ?? 'USD',
-        isVerified:    false,
-        reviewStatus:  'PENDING',
-      })),
+      data: result.extractedData.map((item) => {
+        const v = item.value ?? 0
+        return {
+          caseId,
+          documentId: doc.id,
+          year:          item.year          ?? 'Unknown',
+          statementType: item.statementType ?? 'N/A',
+          lineItem:      item.lineItem,
+          value:         v,                      // Float legacy
+          aiSuggestedValue: v,                   // Float legacy
+          valueDecimal:            money(v),     // Slice 4 authoritative
+          aiSuggestedValueDecimal: money(v),
+          confidence:    item.confidence    ?? 0.8,
+          sourceRef:     item.sourceRef,
+          currency:      item.currency      ?? 'USD',
+          isVerified:    false,
+          reviewStatus:  'PENDING',
+        }
+      }),
     })
     await prisma.document.update({ where: { id: doc.id }, data: { status: 'EXTRACTED' } })
   }
@@ -126,17 +132,20 @@ export async function overrideFinancialValue(id: string, newValue: number, reaso
 
   if (before.isLocked) throw new Error('This value is locked and cannot be overridden.')
 
+  const newDecimal = money(newValue)
   await prisma.financialValue.update({
     where: { id },
     data: {
-      value: newValue, reviewStatus: 'OVERRIDDEN', isVerified: true,
+      value:        newValue,             // Float legacy
+      valueDecimal: newDecimal,           // Slice 4 authoritative
+      reviewStatus: 'OVERRIDDEN', isVerified: true,
       overrideReason: reason, overriddenBy: session.userId, overriddenAt: new Date(),
     },
   })
   await logAction({
     userId: session.userId, action: 'OVERRIDE_VALUE', caseId: before.caseId,
     targetModel: 'FinancialValue', targetId: id,
-    oldValue: { value: before.value }, newValue: { value: newValue, reason },
+    oldValue: { value: before.value }, newValue: { value: serializeMoney(newDecimal), reason },
   })
   revalidatePath(`/projects/${before.caseId}`)
 }
@@ -170,7 +179,10 @@ export async function toggleLockFinancialValue(id: string) {
 export async function updateFinancialValue(id: string, value: number, lineItem: string) {
   const { value: before } = await requireFinancialValueAccess(id, 'value:override')
   if (before.isLocked) throw new Error('Value is locked.')
-  const updated = await prisma.financialValue.update({ where: { id }, data: { value, lineItem } })
+  const updated = await prisma.financialValue.update({
+    where: { id },
+    data: { value, valueDecimal: money(value), lineItem },
+  })
   revalidatePath(`/projects/${updated.caseId}`)
   return updated
 }
@@ -353,7 +365,11 @@ export async function draftReportSection(caseId: string, section: Parameters<typ
   if (!c) throw new NotFoundError()
 
   const latestModel = c.valuationModels[0]
-  const addBackTotal = c.addBacks.reduce((s, a) => s + ((a.ttm ?? 0)), 0)
+  // Slice 4: decimal-safe sum. Prefer the Decimal shadow column when
+  // populated; fall back to the Float column otherwise (un-migrated rows).
+  const addBackTotalD = moneySum(
+    c.addBacks.map(a => (a as any).ttmDecimal ?? a.ttm ?? 0),
+  )
   const years = [...new Set(c.financialData.map(f => f.year))].sort()
 
   return generateReportNarrative({
@@ -367,7 +383,7 @@ export async function draftReportSection(caseId: string, section: Parameters<typ
     ebitda:          latestModel?.ebitda ?? undefined,
     multiplier:      latestModel?.multiplier ?? undefined,
     financialSummary: `${years.length} years of data (${years.join(', ')})`,
-    addBackSummary:  `${c.addBacks.length} add-backs, total TTM: $${addBackTotal.toLocaleString()}`,
+    addBackSummary:  `${c.addBacks.length} add-backs, total TTM: ${formatMoney(addBackTotalD)}`,
     existingText,
   })
 }

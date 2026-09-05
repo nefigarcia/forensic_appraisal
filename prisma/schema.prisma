@@ -119,6 +119,9 @@ model FinancialValue {
   value            Float
   aiSuggestedValue Float?    // original AI-extracted value (immutable reference)
   confidence       Float?    // 0.0–1.0 from AI
+  // Slice 4 — decimal-safe shadow columns (Float above kept for read-fallback + UI display).
+  valueDecimal            Decimal? @db.Decimal(19, 4)
+  aiSuggestedValueDecimal Decimal? @db.Decimal(19, 4)
   sourceRef        String?   // e.g. "page 4, table 2, row 'Gross receipts'"
   currency         String    @default("USD")
   isVerified       Boolean   @default(false)
@@ -146,6 +149,10 @@ model AddBack {
   ttm             Float?   // trailing twelve months
   aiSuggested     Boolean  @default(false)
   confidence      Float?
+  // Slice 4 — decimal-safe shadow columns
+  year2Decimal    Decimal? @db.Decimal(19, 4)
+  year1Decimal    Decimal? @db.Decimal(19, 4)
+  ttmDecimal      Decimal? @db.Decimal(19, 4)
   rationale       String?  @db.Text // required before report generation
   isApproved      Boolean  @default(false)
   approvedBy      String?
@@ -205,6 +212,26 @@ model ValuationModel {
 
   // Reconciliation notes
   reconciliationNote String? @db.Text
+
+  // Slice 4 — decimal-safe shadow columns.
+  //  - Money fields: Decimal(19, 4)
+  //  - Rates / multiples / weights: Decimal(9, 6)
+  ebitdaDecimal            Decimal? @db.Decimal(19, 4)
+  multiplierDecimal        Decimal? @db.Decimal(9,  6)
+  growthRateDecimal        Decimal? @db.Decimal(9,  6)
+  dcfYear1Decimal          Decimal? @db.Decimal(19, 4)
+  dcfYear2Decimal          Decimal? @db.Decimal(19, 4)
+  dcfYear3Decimal          Decimal? @db.Decimal(19, 4)
+  dcfYear4Decimal          Decimal? @db.Decimal(19, 4)
+  dcfYear5Decimal          Decimal? @db.Decimal(19, 4)
+  terminalGrowthDecimal    Decimal? @db.Decimal(9,  6)
+  discountRateDecimal      Decimal? @db.Decimal(9,  6)
+  riskFreeRateDecimal      Decimal? @db.Decimal(9,  6)
+  equityRiskPremiumDecimal Decimal? @db.Decimal(9,  6)
+  sizePremiumDecimal       Decimal? @db.Decimal(9,  6)
+  specificRiskDecimal      Decimal? @db.Decimal(9,  6)
+  indicatedValueDecimal    Decimal? @db.Decimal(19, 4)
+  weightDecimal            Decimal? @db.Decimal(9,  6)
 
   createdAt        DateTime @default(now())
 }

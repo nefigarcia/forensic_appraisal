@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { logAction } from '@/lib/audit'
 import { revalidatePath } from 'next/cache'
 import { requireCaseAccess, requireAddBackAccess } from '@/lib/authz'
+import { money } from '@/lib/money'
 
 export async function getAddBacks(caseId: string) {
   await requireCaseAccess(caseId, 'case:read')
@@ -30,9 +31,14 @@ export async function createAddBack(caseId: string, data: {
       caseId,
       category:    data.category,
       description: data.description,
+      // Float legacy columns (kept for UI display during migration)
       year2:       data.year2 ?? null,
       year1:       data.year1 ?? null,
       ttm:         data.ttm  ?? null,
+      // Slice 4 authoritative decimals
+      year2Decimal: data.year2 != null ? money(data.year2) : null,
+      year1Decimal: data.year1 != null ? money(data.year1) : null,
+      ttmDecimal:   data.ttm   != null ? money(data.ttm)   : null,
       rationale:   data.rationale ?? null,
       aiSuggested: data.aiSuggested ?? false,
       confidence:  data.confidence  ?? null,
@@ -62,9 +68,14 @@ export async function updateAddBack(id: string, data: {
     data: {
       category:    data.category    ?? undefined,
       description: data.description ?? undefined,
+      // Float legacy — undefined leaves the column unchanged; explicit null clears it.
       year2:       data.year2,
       year1:       data.year1,
       ttm:         data.ttm,
+      // Slice 4 authoritative decimal mirrors — same tri-state semantics.
+      year2Decimal: data.year2 === undefined ? undefined : (data.year2 === null ? null : money(data.year2)),
+      year1Decimal: data.year1 === undefined ? undefined : (data.year1 === null ? null : money(data.year1)),
+      ttmDecimal:   data.ttm   === undefined ? undefined : (data.ttm   === null ? null : money(data.ttm)),
       rationale:   data.rationale   ?? undefined,
     },
   })
