@@ -56,6 +56,7 @@ import { runFinancialExtraction, runIndustryAnalysis, updateFinancialValue, appr
 import { AIThinkingDialog, AI_MESSAGES } from "@/components/ai-thinking-dialog"
 import { ConfidenceBadge } from "@/components/confidence-badge"
 import { CitationIndicator } from "@/components/citation-indicator"
+import { TieOutDashboard } from "@/components/tie-out-dashboard"
 import { OverrideDialog } from "@/components/override-dialog"
 import { AuditLogPanel } from "@/components/audit-log-panel"
 import { AuditIntegrityBadge } from "@/components/audit-integrity-badge"
@@ -699,6 +700,10 @@ export default function ProjectDetail() {
               <TabsTrigger value="addbacks" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <ClipboardList className="mr-2 h-4 w-4" />
                 Add-Backs
+              </TabsTrigger>
+              <TabsTrigger value="tieouts" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                Tie-Outs
               </TabsTrigger>
               <TabsTrigger value="anomalies" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <AlertTriangle className="mr-2 h-4 w-4" />
@@ -1451,6 +1456,19 @@ export default function ProjectDetail() {
                     </Card>
                   ))}
                 </div>
+              </div>
+            </TabsContent>
+
+            {/* ─── TIE-OUTS TAB (Slice 9) ─────────────────────────────── */}
+            <TabsContent value="tieouts">
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-black text-primary tracking-tight">Financial Tie-Outs</h2>
+                  <p className="text-sm text-muted-foreground font-medium">
+                    Reconcile equivalent facts across evidence sources. Discrepancies are surfaced first and never auto-hidden.
+                  </p>
+                </div>
+                <TieOutDashboard caseId={id as string} />
               </div>
             </TabsContent>
 

@@ -116,6 +116,13 @@ describe('repository shape (Slice 0 baseline)', () => {
     'src/app/settings/ai-executions/page.tsx',
     'docs/migrations/slice-8-ai-executions.sql',
     'docs/architecture/AI_EXECUTIONS.md',
+    // Slice 9 — financial tie-out engine
+    'src/lib/tie-out/concepts.ts',
+    'src/lib/tie-out/status.ts',
+    'src/app/actions/tie-outs.ts',
+    'src/components/tie-out-dashboard.tsx',
+    'docs/migrations/slice-9-tie-outs.sql',
+    'docs/architecture/TIE_OUT_ENGINE.md',
   ])('exists: %s', (rel) => {
     expect(existsSync(p(rel))).toBe(true)
   })
@@ -150,6 +157,7 @@ describe('repository shape (Slice 0 baseline)', () => {
       'src/app/actions/citations.ts',
       'src/app/actions/audit-integrity.ts',
       'src/app/actions/ai-executions.ts',
+      'src/app/actions/tie-outs.ts',
     ]
     for (const rel of actionFiles) {
       const head = readFileSync(p(rel), 'utf8').slice(0, 40)

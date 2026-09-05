@@ -83,6 +83,7 @@ model Case {
   insights         CaseInsight[]
   ttmReport        Json?                   // persisted normalized TTM report — avoids re-running AI on reload
   aiExecutions     AiExecution[]
+  tieOuts          TieOut[]
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
 }
@@ -157,6 +158,8 @@ model DocumentVersion {
   // Slice 7 — every citation points at a specific immutable version, so a
   // future re-upload cannot invalidate the citation.
   citations     EvidenceCitation[]
+  // Slice 9 — tie-out items may reference this specific version.
+  tieOutItems   TieOutItem[]
 
   @@unique([documentId, versionNumber])
   @@index([sha256Hash])
@@ -199,6 +202,8 @@ model FinancialValue {
   // NULL for hand-entered rows and pre-Slice-8 extractions.
   aiExecutionId    String?
   aiExecution      AiExecution? @relation(fields: [aiExecutionId], references: [id])
+  // Slice 9 — feeds tie-out reconciliation items.
+  tieOutItems      TieOutItem[]
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -631,4 +636,81 @@ model AiExecution {
   @@index([userId])
   @@index([flowName, createdAt])
   @@index([status])
+}
+
+// ─────────────────────────────────────────────────
+// TIE-OUT ENGINE (Slice 9)
+// ─────────────────────────────────────────────────
+// A TieOut represents one reconciliation task: a specific (concept, year)
+// pair on a specific case, e.g. "Revenue for 2024". Its TieOutItem rows
+// hold the individual values pulled from different evidence sources
+// (Tax Return, P&L, GL, Bank Confirmation, ...).
+//
+// Status is computed from the item values + the tolerance rules on the
+// tie-out itself. The verdict is one of:
+//   TIED               all items numerically equal
+//   WITHIN_TOLERANCE   max pairwise difference within tolerance
+//   DISCREPANCY        outside tolerance; needs analyst review
+//   UNRESOLVED         < 2 items — can't reconcile a single source
+//   RESOLVED           analyst has explicitly resolved a DISCREPANCY;
+//                      the row remains visible (never auto-hidden)
+//
+// Tolerance is per-tie-out with per-concept defaults. Both an absolute
+// dollar tolerance and a percent-of-median tolerance are supported; a
+// difference is "within tolerance" if it satisfies EITHER.
+model TieOut {
+  id                String   @id @default(cuid())
+  caseId            String
+  case              Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  concept           String   // REVENUE | EBITDA | NET_INCOME | CASH | ACCOUNTS_RECEIVABLE | ACCOUNTS_PAYABLE | TOTAL_ASSETS | TOTAL_LIABILITIES
+  year              String   // 'TTM' | '2024' | ...
+
+  // Tolerance rules. NULL means "use the default for this concept".
+  toleranceAbsolute Decimal? @db.Decimal(19, 4)
+  tolerancePercent  Decimal? @db.Decimal(9,  6)   // 0.001 = 0.1%
+
+  status            String   @default("UNRESOLVED") // TIED | WITHIN_TOLERANCE | DISCREPANCY | UNRESOLVED | RESOLVED
+  // Max pairwise absolute difference across the items. Cached for the
+  // dashboard sort; the authoritative source is always the items.
+  maxDifference     Decimal? @db.Decimal(19, 4)
+
+  // Reviewer resolution
+  resolvedBy        String?  // userId
+  resolvedAt        DateTime?
+  resolutionNote    String?  @db.Text
+
+  items             TieOutItem[]
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // A given (case, concept, year) has exactly one TieOut. Re-running the
+  // builder upserts existing rows so a case never grows duplicate
+  // reconciliations for the same fact.
+  @@unique([caseId, concept, year])
+  @@index([caseId, status])
+  @@index([status])
+}
+
+model TieOutItem {
+  id                String   @id @default(cuid())
+  tieOutId          String
+  tieOut            TieOut   @relation(fields: [tieOutId], references: [id], onDelete: Cascade)
+
+  sourceLabel       String   // 'Income Statement' | 'Tax Return' | 'GL' | 'Bank' | ...
+  value             Decimal  @db.Decimal(19, 4)
+
+  // Optional back-links to the source. Both are SetNull because the
+  // TieOut is the entity of record for the reconciliation history —
+  // deleting a FinancialValue must not erase the audit trail.
+  financialValueId  String?
+  financialValue    FinancialValue?  @relation(fields: [financialValueId], references: [id], onDelete: SetNull)
+  documentVersionId String?
+  documentVersion   DocumentVersion? @relation(fields: [documentVersionId], references: [id], onDelete: SetNull)
+
+  createdAt         DateTime @default(now())
+
+  @@index([tieOutId])
+  @@index([financialValueId])
+  @@index([documentVersionId])
 }
