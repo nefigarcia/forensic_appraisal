@@ -62,6 +62,7 @@ import { CaseTeamPanel } from "@/components/case-team-panel"
 import { ReviewQueuePanel } from "@/components/review-queue-panel"
 import { RequestListPanel } from "@/components/request-list-panel"
 import { ValuationWorkbench } from "@/components/valuation-workbench"
+import { ReportComposerPanel } from "@/components/report-composer-panel"
 import { OverrideDialog } from "@/components/override-dialog"
 import { AuditLogPanel } from "@/components/audit-log-panel"
 import { AuditIntegrityBadge } from "@/components/audit-integrity-badge"
@@ -734,6 +735,10 @@ export default function ProjectDetail() {
               <TabsTrigger value="workbench" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <Calculator className="mr-2 h-4 w-4" />
                 Workbench
+              </TabsTrigger>
+              <TabsTrigger value="composer" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <BookOpen className="mr-2 h-4 w-4" />
+                Composer
               </TabsTrigger>
               <TabsTrigger value="team" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <ShieldCheck className="mr-2 h-4 w-4" />
@@ -1507,6 +1512,19 @@ export default function ProjectDetail() {
             </TabsContent>
 
             {/* ─── TEAM & REVIEW (Slice 11) ────────────────────────────── */}
+            {/* ─── REPORT COMPOSER (Slice 14) ────────────────────────────── */}
+            <TabsContent value="composer">
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-black text-primary tracking-tight">Report Composer</h2>
+                  <p className="text-sm text-muted-foreground font-medium">
+                    Evidence-grounded report drafts. AI narratives are constrained to APPROVED case data only, cite the exact fact ids the payload contains, and never overwrite a reviewer-approved section.
+                  </p>
+                </div>
+                <ReportComposerPanel caseId={id as string} />
+              </div>
+            </TabsContent>
+
             {/* ─── VALUATION WORKBENCH (Slice 13) ────────────────────────── */}
             <TabsContent value="workbench">
               <div className="space-y-6">

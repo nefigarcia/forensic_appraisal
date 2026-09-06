@@ -177,6 +177,21 @@ describe('repository shape (Slice 0 baseline)', () => {
     'src/components/valuation-workbench.tsx',
     'docs/migrations/slice-13-valuation-v2.sql',
     'docs/architecture/VALUATION_ENGINE_V2.md',
+    // Slice 14 — evidence-grounded report composer
+    'src/lib/reports/sections.ts',
+    'src/lib/reports/facts.ts',
+    'src/lib/reports/citation-validator.ts',
+    'src/lib/reports/readiness.ts',
+    'src/lib/reports/checklists.ts',
+    'src/lib/reports/exporters/plain-text.ts',
+    'src/lib/reports/exporters/docx.ts',
+    'src/ai/flows/report-section-narrative-flow.ts',
+    'src/app/actions/reports.ts',
+    'src/app/actions/report-sections.ts',
+    'src/app/actions/report-export.ts',
+    'src/components/report-composer-panel.tsx',
+    'docs/migrations/slice-14-report-composer.sql',
+    'docs/architecture/REPORT_COMPOSER.md',
   ])('exists: %s', (rel) => {
     expect(existsSync(p(rel))).toBe(true)
   })
@@ -224,6 +239,9 @@ describe('repository shape (Slice 0 baseline)', () => {
       'src/app/actions/valuation-assumptions.ts',
       'src/app/actions/valuation-compute.ts',
       'src/app/actions/ownership-adjustments.ts',
+      'src/app/actions/reports.ts',
+      'src/app/actions/report-sections.ts',
+      'src/app/actions/report-export.ts',
     ]
     for (const rel of actionFiles) {
       const head = readFileSync(p(rel), 'utf8').slice(0, 40)

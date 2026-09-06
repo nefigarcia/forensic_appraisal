@@ -90,6 +90,14 @@ export const FLOW_METADATA: Record<string, FlowMetadata> = {
     modelProvider:     'googleai',
     modelName:         'gemini-2.5-flash',
   },
+  // Slice 14 — evidence-grounded report-section narrative flow.
+  reportSectionNarrativeV2Flow: {
+    flowName:          'reportSectionNarrativeV2Flow',
+    flowVersion:       'v1-slice14',
+    promptTemplateKey: 'report-section-narrative.v2-grounded',
+    modelProvider:     'googleai',
+    modelName:         'gemini-2.5-flash',
+  },
 }
 
 export function metadataFor(flowName: string): FlowMetadata {
