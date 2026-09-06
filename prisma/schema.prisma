@@ -31,6 +31,8 @@ model Organization {
   cases                 Case[]
   connectors            ExternalConnector[]
   aiExecutions          AiExecution[]
+  // Slice 12 — firm-owned request-list templates.
+  requestTemplates      RequestTemplate[]
 }
 
 model User {
@@ -95,6 +97,12 @@ model Case {
   hasEngagementTeam Boolean                @default(false)
   members          CaseMember[]
   reviewItems      ReviewItem[]
+  // Slice 12 — request lists (PBC) and client portal contacts.
+  requestLists     RequestList[]
+  clientContacts   ClientContact[]
+  portalAccesses   PortalAccess[]
+  requestItems     RequestItem[]
+  reminderEvents   ReminderEvent[]
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
 }
@@ -129,6 +137,8 @@ model Document {
   archivedAt       DateTime?
   archivedBy       String?
   archiveReason    String?          @db.Text
+  // Slice 12 — attach documents to a client-facing RequestItem.
+  requestItemLinks RequestItemDocument[]
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
@@ -656,6 +666,8 @@ model AiExecution {
   createdAt          DateTime @default(now())
 
   financialValues    FinancialValue[]
+  // Slice 12 — request-item completeness detection runs.
+  requestItems       RequestItem[]
 
   @@index([organizationId, createdAt])
   @@index([caseId, createdAt])
@@ -821,5 +833,233 @@ model ReviewComment {
   createdAt     DateTime @default(now())
 
   @@index([reviewItemId, createdAt])
+}
+
+// ─────────────────────────────────────────────────
+// CLIENT REQUEST LIST & SECURE PORTAL (Slice 12)
+// ─────────────────────────────────────────────────
+// A firm collects "prepared-by-client" (PBC) documents through a
+// RequestList attached to a Case. Each RequestList is composed of
+// RequestItems (individual asks). Items have a lifecycle status
+// (NOT_REQUESTED → REQUESTED → RECEIVED → NEEDS_CLARIFICATION →
+//  RECEIVED → ACCEPTED / NOT_APPLICABLE) and can carry multiple
+// uploaded documents.
+//
+// Clients access their assigned RequestList via an opaque URL token.
+// The raw token exists only in the emailed link; only its SHA-256 hash
+// is stored in `PortalAccess`. A portal caller NEVER gets a firm
+// session — they see only their own list, and only the RequestItem
+// rows scoped to it.
+//
+// See docs/architecture/CLIENT_PORTAL_REQUESTS.md for the security
+// model and the "no cross-scope" invariant.
+model RequestList {
+  id            String   @id @default(cuid())
+  caseId        String
+  case          Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?  @db.Text
+  // DRAFT while the firm is still assembling the list. SENT once at
+  // least one PortalAccess has been issued. CLOSED when the analyst
+  // marks the collection complete.
+  status        String   @default("DRAFT")   // DRAFT | SENT | CLOSED
+  createdBy     String   // firm userId
+  templateId    String?  // origin template, for provenance
+  template      RequestTemplate? @relation(fields: [templateId], references: [id])
+  sentAt        DateTime?
+  closedAt      DateTime?
+  items         RequestItem[]
+  portalAccesses PortalAccess[]
+  reminderEvents ReminderEvent[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([caseId, status])
+  @@index([templateId])
+}
+
+model RequestItem {
+  id                 String   @id @default(cuid())
+  requestListId      String
+  requestList        RequestList @relation(fields: [requestListId], references: [id], onDelete: Cascade)
+  // Denormalized for tenant-scoping queries + dashboards.
+  caseId             String
+  case               Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  title              String
+  description        String?  @db.Text
+  category           String?  // FINANCIAL | TAX | BANK | LEGAL | OPERATIONS | GOVERNANCE | HR | OTHER
+  requestedFrom      String?  // free-form: "Client", "CFO", "Owner Compensation Committee", etc.
+  dueDate            DateTime?
+  priority           String   @default("NORMAL")   // LOW | NORMAL | HIGH
+  status             String   @default("NOT_REQUESTED")
+  //   NOT_REQUESTED       — analyst hasn't sent this to the client
+  //   REQUESTED           — SENT and awaiting client action
+  //   RECEIVED            — client uploaded at least one document
+  //   NEEDS_CLARIFICATION — reviewer flagged that upload as insufficient
+  //   ACCEPTED            — reviewer signed off
+  //   NOT_APPLICABLE      — reviewer determined this item doesn't apply
+  assignedToUserId   String?  // firm professional assigned to review
+  reviewerUserId     String?  // firm reviewer (may equal assignedTo)
+  notes              String?  @db.Text          // firm-internal notes; NEVER shown to portal
+  clarificationNote  String?  @db.Text          // shown to portal when NEEDS_CLARIFICATION
+  // ── AI-assisted completeness detection ────────────────────────────
+  // Populated by runCompletenessCheck; NEVER auto-transitions the
+  // status to ACCEPTED. Only a suggestion visible to the reviewer.
+  //   AUTO_COMPLETE       — AI believes upload satisfies the request
+  //   NEEDS_HUMAN         — AI is not confident; human must judge
+  //   INSUFFICIENT        — AI believes upload does not satisfy the request
+  aiCompleteness     String?
+  // Anti-hallucination flag (Slice 7 pattern). When false, aiCompleteness
+  // must be surfaced as a suggestion the human explicitly reviews.
+  aiCompletenessConfident Boolean @default(true)
+  aiCompletenessNote String? @db.Text
+  aiExecutionId      String?
+  aiExecution        AiExecution? @relation(fields: [aiExecutionId], references: [id])
+  documents          RequestItemDocument[]
+  reminders          ReminderEvent[]
+  statusChangedAt    DateTime?
+  displayOrder       Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([requestListId, status])
+  @@index([caseId, status])
+  @@index([status])
+  @@index([aiExecutionId])
+}
+
+// Join between RequestItem and Document. A single document can satisfy
+// multiple items in principle (e.g. a comprehensive tax return covers
+// several asks) so the join is many-to-many; the unique guards duplicate
+// links.
+model RequestItemDocument {
+  id               String   @id @default(cuid())
+  requestItemId    String
+  requestItem      RequestItem @relation(fields: [requestItemId], references: [id], onDelete: Cascade)
+  documentId       String
+  document         Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  // True when the upload originated on the client portal (not a firm
+  // user manually attaching a doc). Preserves origin for the audit
+  // trail even after the PortalAccess is revoked.
+  uploadedByPortal Boolean  @default(false)
+  uploadedByContactId String?  // ClientContact.id (nullable when firm-side)
+  uploadedAt       DateTime @default(now())
+
+  @@unique([requestItemId, documentId])
+  @@index([documentId])
+}
+
+// A person on the client's side. Distinct from `User` — a ClientContact
+// never has a firm password, JWT session, or org role.
+model ClientContact {
+  id            String   @id @default(cuid())
+  caseId        String
+  case          Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  name          String
+  email         String   // normalized lowercase at write time
+  role          String?  // free-form: "Owner", "CFO", "Bookkeeper", ...
+  createdBy     String   // firm userId
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  portalAccesses PortalAccess[]
+  reminderEvents ReminderEvent[]
+
+  @@index([caseId])
+  @@index([caseId, email])
+}
+
+// A per-invitation opaque token that grants a single ClientContact
+// scoped access to a single RequestList. The primary key is the SHA-256
+// hex hash of the raw token; the raw token exists only in the emailed
+// URL. Portal server actions look up the row by hashing the incoming
+// token — a DB dump therefore never leaks a usable portal link.
+model PortalAccess {
+  tokenHash        String   @id
+  clientContactId  String
+  clientContact    ClientContact @relation(fields: [clientContactId], references: [id], onDelete: Cascade)
+  requestListId    String
+  requestList      RequestList @relation(fields: [requestListId], references: [id], onDelete: Cascade)
+  // Denormalized for tenant-scoping queries + audit-log ergonomics.
+  caseId           String
+  case             Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  invitedBy        String   // firm userId who issued the invite
+  invitedAt        DateTime @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  revokedBy        String?
+  lastUsedAt       DateTime?
+  usageCount       Int      @default(0)
+  lastUsedIp       String?
+
+  @@index([requestListId])
+  @@index([clientContactId])
+  @@index([caseId])
+  @@index([expiresAt])
+}
+
+// Log of every reminder / notification touching a request. Both a
+// rate-limit source (queries by `sentAt`) and an audit signal.
+model ReminderEvent {
+  id             String   @id @default(cuid())
+  caseId         String
+  case           Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  requestListId  String?
+  requestList    RequestList? @relation(fields: [requestListId], references: [id], onDelete: Cascade)
+  requestItemId  String?
+  requestItem    RequestItem? @relation(fields: [requestItemId], references: [id], onDelete: Cascade)
+  clientContactId String?
+  clientContact   ClientContact? @relation(fields: [clientContactId], references: [id])
+  //   INVITE          — first portal link email
+  //   REMINDER        — subsequent nudge
+  //   CLARIFICATION   — reviewer requested clarification
+  //   RECEIVED_ACK    — firm confirmed receipt / acceptance
+  kind           String
+  channel        String   @default("EMAIL")   // EMAIL | INAPP
+  toEmail        String?
+  sentBy         String?  // firm userId; NULL for system / scheduled
+  sentAt         DateTime @default(now())
+  status         String   @default("SENT")    // SENT | FAILED | SUPPRESSED
+  errorMessage   String?  @db.Text
+
+  @@index([caseId, sentAt])
+  @@index([requestListId, sentAt])
+  @@index([requestItemId, sentAt])
+  @@index([clientContactId, sentAt])
+}
+
+// Firm-editable template of a request list. Seeded system templates
+// (`isSystem = true`) cannot be deleted but may be cloned. Firms can
+// author their own templates for their common engagement types.
+model RequestTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?  @db.Text
+  engagementType String?  // BUSINESS_VALUATION | DIVORCE | LITIGATION | ESTATE | OTHER
+  isSystem       Boolean  @default(false)
+  createdBy      String?
+  items          RequestTemplateItem[]
+  requestLists   RequestList[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([organizationId, engagementType])
+}
+
+model RequestTemplateItem {
+  id             String   @id @default(cuid())
+  templateId     String
+  template       RequestTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  title          String
+  description    String?  @db.Text
+  category       String?
+  priority       String   @default("NORMAL")
+  displayOrder   Int      @default(0)
+
+  @@index([templateId])
 }
 

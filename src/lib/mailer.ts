@@ -13,7 +13,14 @@ export interface OutgoingMail {
   text:    string
   html?:   string
   /** Optional tag for observability once we have a real transport. */
-  category?: 'password-reset' | 'email-verification' | 'mfa-enrollment'
+  category?:
+    | 'password-reset'
+    | 'email-verification'
+    | 'mfa-enrollment'
+    | 'portal-invite'
+    | 'portal-reminder'
+    | 'portal-clarification'
+    | 'portal-receipt'
 }
 
 export async function sendMail(mail: OutgoingMail): Promise<void> {

@@ -143,6 +143,22 @@ describe('repository shape (Slice 0 baseline)', () => {
     'src/components/review-queue-panel.tsx',
     'docs/migrations/slice-11-case-team.sql',
     'docs/architecture/CASE_TEAM_REVIEW_WORKFLOW.md',
+    // Slice 12 — client request list + secure portal
+    'src/lib/portal/tokens.ts',
+    'src/lib/portal/session.ts',
+    'src/lib/requests/statuses.ts',
+    'src/lib/requests/categories.ts',
+    'src/lib/requests/templates-seed.ts',
+    'src/app/actions/requests.ts',
+    'src/app/actions/portal.ts',
+    'src/app/actions/portal-invites.ts',
+    'src/app/actions/request-completeness.ts',
+    'src/ai/flows/request-completeness-flow.ts',
+    'src/app/portal/[token]/page.tsx',
+    'src/components/request-list-panel.tsx',
+    'src/components/portal-uploader.tsx',
+    'docs/migrations/slice-12-client-portal.sql',
+    'docs/architecture/CLIENT_PORTAL_REQUESTS.md',
   ])('exists: %s', (rel) => {
     expect(existsSync(p(rel))).toBe(true)
   })
@@ -182,6 +198,10 @@ describe('repository shape (Slice 0 baseline)', () => {
       'src/app/actions/case-team.ts',
       'src/app/actions/reviews.ts',
       'src/app/actions/review-queue.ts',
+      'src/app/actions/requests.ts',
+      'src/app/actions/portal.ts',
+      'src/app/actions/portal-invites.ts',
+      'src/app/actions/request-completeness.ts',
     ]
     for (const rel of actionFiles) {
       const head = readFileSync(p(rel), 'utf8').slice(0, 40)

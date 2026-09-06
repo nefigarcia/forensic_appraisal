@@ -82,6 +82,14 @@ export const FLOW_METADATA: Record<string, FlowMetadata> = {
     modelProvider:     'googleai',
     modelName:         'gemini-2.5-flash',
   },
+  // Slice 12 — client-request completeness detection.
+  requestCompletenessFlow: {
+    flowName:          'requestCompletenessFlow',
+    flowVersion:       'v1',
+    promptTemplateKey: 'request-completeness.v1',
+    modelProvider:     'googleai',
+    modelName:         'gemini-2.5-flash',
+  },
 }
 
 export function metadataFor(flowName: string): FlowMetadata {
