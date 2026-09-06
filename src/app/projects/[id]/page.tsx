@@ -63,6 +63,7 @@ import { ReviewQueuePanel } from "@/components/review-queue-panel"
 import { RequestListPanel } from "@/components/request-list-panel"
 import { ValuationWorkbench } from "@/components/valuation-workbench"
 import { ReportComposerPanel } from "@/components/report-composer-panel"
+import { AccountingIntegrationsPanel } from "@/components/accounting-integrations-panel"
 import { OverrideDialog } from "@/components/override-dialog"
 import { AuditLogPanel } from "@/components/audit-log-panel"
 import { AuditIntegrityBadge } from "@/components/audit-integrity-badge"
@@ -739,6 +740,10 @@ export default function ProjectDetail() {
               <TabsTrigger value="composer" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <BookOpen className="mr-2 h-4 w-4" />
                 Composer
+              </TabsTrigger>
+              <TabsTrigger value="integrations" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Integrations
               </TabsTrigger>
               <TabsTrigger value="team" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <ShieldCheck className="mr-2 h-4 w-4" />
@@ -1512,6 +1517,19 @@ export default function ProjectDetail() {
             </TabsContent>
 
             {/* ─── TEAM & REVIEW (Slice 11) ────────────────────────────── */}
+            {/* ─── ACCOUNTING INTEGRATIONS (Slice 15) ───────────────────── */}
+            <TabsContent value="integrations">
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-black text-primary tracking-tight">Accounting Integrations</h2>
+                  <p className="text-sm text-muted-foreground font-medium">
+                    Structured Excel exports/imports with template versioning + case identity, and QuickBooks Online (Xero/Sage/NetSuite adapters land in future slices). Ingested values always carry their origin.
+                  </p>
+                </div>
+                <AccountingIntegrationsPanel caseId={id as string} />
+              </div>
+            </TabsContent>
+
             {/* ─── REPORT COMPOSER (Slice 14) ────────────────────────────── */}
             <TabsContent value="composer">
               <div className="space-y-6">

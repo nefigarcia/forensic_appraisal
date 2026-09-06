@@ -192,6 +192,24 @@ describe('repository shape (Slice 0 baseline)', () => {
     'src/components/report-composer-panel.tsx',
     'docs/migrations/slice-14-report-composer.sql',
     'docs/architecture/REPORT_COMPOSER.md',
+    // Slice 15 — accounting connectors + spreadsheet ingestion
+    'src/lib/spreadsheets/template-schema.ts',
+    'src/lib/spreadsheets/workbook-metadata.ts',
+    'src/lib/spreadsheets/excel-export.ts',
+    'src/lib/spreadsheets/excel-import.ts',
+    'src/lib/connectors/types.ts',
+    'src/lib/connectors/registry.ts',
+    'src/lib/connectors/quickbooks/adapter.ts',
+    'src/lib/connectors/xero/adapter.ts',
+    'src/lib/connectors/sage/adapter.ts',
+    'src/lib/connectors/netsuite/adapter.ts',
+    'src/app/actions/accounting-imports.ts',
+    'src/app/actions/accounting-connectors.ts',
+    'src/app/api/connect/quickbooks/route.ts',
+    'src/app/api/connect/quickbooks/callback/route.ts',
+    'src/components/accounting-integrations-panel.tsx',
+    'docs/migrations/slice-15-accounting-integrations.sql',
+    'docs/architecture/ACCOUNTING_INTEGRATIONS.md',
   ])('exists: %s', (rel) => {
     expect(existsSync(p(rel))).toBe(true)
   })
@@ -242,6 +260,8 @@ describe('repository shape (Slice 0 baseline)', () => {
       'src/app/actions/reports.ts',
       'src/app/actions/report-sections.ts',
       'src/app/actions/report-export.ts',
+      'src/app/actions/accounting-imports.ts',
+      'src/app/actions/accounting-connectors.ts',
     ]
     for (const rel of actionFiles) {
       const head = readFileSync(p(rel), 'utf8').slice(0, 40)

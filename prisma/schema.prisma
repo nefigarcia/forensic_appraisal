@@ -35,6 +35,8 @@ model Organization {
   requestTemplates      RequestTemplate[]
   // Slice 14 — firm-owned standards checklists.
   standardsChecklists   StandardsChecklist[]
+  // Slice 15 — per-case accounting connectors (QBO/Xero/Sage/NetSuite).
+  accountingConnectors  AccountingConnector[]
 }
 
 model User {
@@ -109,6 +111,11 @@ model Case {
   valuationEngagement ValuationEngagement?
   // Slice 14 — evidence-grounded report composer.
   report              Report?
+  // Slice 15 — accounting connectors + spreadsheet ingestion.
+  accountingConnectors   AccountingConnector[]
+  accountingSourceRows   AccountingSourceRow[]
+  accountingIngestionRuns AccountingIngestionRun[]
+  excelImportRuns        ExcelImportRun[]
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
 }
@@ -231,10 +238,24 @@ model FinancialValue {
   aiExecution      AiExecution? @relation(fields: [aiExecutionId], references: [id])
   // Slice 9 — feeds tie-out reconciliation items.
   tieOutItems      TieOutItem[]
+  // Slice 15 — origin tag. Distinguishes AI-extracted values from
+  // rows promoted from a QuickBooks / Xero / Sage / NetSuite / Excel
+  // import. Never quietly overwritten — the UI badges values by
+  // origin so a reader always sees where a number came from.
+  //   AI       — AI extraction (default for legacy rows; see Slice 8)
+  //   HUMAN    — analyst hand-entered
+  //   QBO      — QuickBooks Online
+  //   XERO / SAGE / NETSUITE — reserved for future adapters
+  //   EXCEL    — imported from a ValuVault-exported workbook
+  origin           String    @default("AI")
+  sourceRowId      String?   // FK to AccountingSourceRow (nullable)
+  sourceRow        AccountingSourceRow? @relation(fields: [sourceRowId], references: [id], onDelete: SetNull)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
   @@index([aiExecutionId])
+  @@index([caseId, origin])
+  @@index([sourceRowId])
 }
 
 // ─────────────────────────────────────────────────
@@ -1629,6 +1650,170 @@ model ReportChecklistItem {
   @@index([reportId, status])
   @@index([reportId, standardsFamily])
 }
+
+// ─────────────────────────────────────────────────
+// ACCOUNTING CONNECTORS + SPREADSHEET INGESTION (Slice 15)
+// ─────────────────────────────────────────────────
+// The Slice-3 `ExternalConnector` model is retained for firm-level
+// storage integrations (Microsoft OneDrive, etc.). Slice 15 introduces
+// a *per-case* `AccountingConnector` for QuickBooks Online, Xero,
+// Sage, NetSuite. One case may have multiple connectors of different
+// providers, or (rarely) multiple companies of the same provider.
+//
+// Tokens are envelope-encrypted using the Slice-3 crypto module — the
+// same `encryptedSecrets` shape is reused verbatim.
+//
+// Every ingested row lands in `AccountingSourceRow`, tagged with its
+// `provider` and `ingestionRunId`. Rows are NEVER promoted into the
+// case's `FinancialValue` set implicitly; a distinct action must
+// stamp `FinancialValue.origin` + `sourceRowId` so the origin remains
+// visible in the UI.
+//
+// Excel imports flow through the same `AccountingSourceRow` +
+// `AccountingIngestionRun` pattern using `provider = 'EXCEL'`, with
+// an additional `ExcelImportRun` capturing the workbook file hash,
+// template version, and the human-approved diff summary.
+
+model AccountingConnector {
+  id                    String   @id @default(cuid())
+  organizationId        String
+  organization          Organization @relation(fields: [organizationId], references: [id])
+  caseId                String
+  case                  Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  //   QUICKBOOKS | XERO | SAGE | NETSUITE
+  provider              String
+  // Provider-side "company" identifier — QBO realmId, Xero tenantId,
+  // Sage business id, NetSuite account id. The label is a human-
+  // readable name (kept for the UI even after tokens expire).
+  providerAccountId     String
+  providerAccountLabel  String?
+  // Slice-3 envelope encryption. Same JSON shape used for
+  // ExternalConnector.encryptedSecrets. `encryptionKeyVersion` lets a
+  // rotation query find rows keyed to an old KMS ARN.
+  encryptedSecrets      Json?
+  encryptionKeyVersion  String?
+  expiresAt             DateTime?          // access token expiry
+  status                String   @default("CONNECTED")
+  connectedBy           String
+  connectedAt           DateTime @default(now())
+  lastSyncAt            DateTime?
+  ingestionRuns         AccountingIngestionRun[]
+  sourceRows            AccountingSourceRow[]
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([caseId, provider, providerAccountId], name: "AccountingConnector_case_provider_account")
+  @@index([organizationId, provider])
+  @@index([caseId, provider])
+  @@index([encryptionKeyVersion])
+}
+
+// One row per fetch. A "run" is scoped to a single (connector, report
+// kind) pair. All rows ingested by that run share the run id so a
+// bad ingest can be rolled back / re-labelled without touching earlier
+// data.
+model AccountingIngestionRun {
+  id             String   @id @default(cuid())
+  caseId         String
+  case           Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  connectorId    String?
+  connector      AccountingConnector? @relation(fields: [connectorId], references: [id], onDelete: SetNull)
+  //   QUICKBOOKS | XERO | SAGE | NETSUITE | EXCEL
+  provider       String
+  //   P_AND_L | BALANCE_SHEET | TRIAL_BALANCE | GENERAL_LEDGER |
+  //   AR_AGING | AP_AGING | EXCEL_IMPORT
+  reportType     String
+  periodLabel    String?  // e.g. '2024-Q4', '2024-01-01_2024-12-31'
+  status         String   @default("RUNNING")   // RUNNING | SUCCESS | FAILURE
+  rowsIngested   Int      @default(0)
+  triggeredBy    String
+  startedAt      DateTime @default(now())
+  completedAt    DateTime?
+  errorCategory  String?  // MODEL_TIMEOUT-style buckets — provider-specific
+  errorMessage   String?  @db.Text
+  // Optional Excel-run linkage (for provider = EXCEL) so the run and
+  // its ExcelImportRun row can be joined.
+  excelImportRunId String?  @unique
+  excelImportRun   ExcelImportRun? @relation(fields: [excelImportRunId], references: [id], onDelete: SetNull)
+  rows           AccountingSourceRow[]
+
+  @@index([caseId, provider])
+  @@index([caseId, reportType])
+  @@index([connectorId])
+}
+
+model AccountingSourceRow {
+  id               String   @id @default(cuid())
+  caseId           String
+  case             Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  connectorId      String?
+  connector        AccountingConnector? @relation(fields: [connectorId], references: [id], onDelete: SetNull)
+  ingestionRunId   String
+  ingestionRun     AccountingIngestionRun @relation(fields: [ingestionRunId], references: [id], onDelete: Cascade)
+  //   QUICKBOOKS | XERO | SAGE | NETSUITE | EXCEL
+  provider         String
+  reportType       String
+  externalRowId    String?  // provider's own row id, if any (idempotency)
+  accountCode      String?  // e.g. account number
+  accountName      String
+  //   ASSET | LIABILITY | EQUITY | REVENUE | EXPENSE | OTHER
+  category         String?
+  period           String   // '2024-Q1' | '2024-12-31' | 'TTM'
+  amountDecimal    Decimal? @db.Decimal(19, 4)
+  currency         String   @default("USD")
+  rawPayload       Json?    // provider's raw row — kept for later re-processing
+  ingestedAt       DateTime @default(now())
+  ingestedBy       String?
+  //   PENDING_PROMOTION | PROMOTED | IGNORED | SUPERSEDED
+  status           String   @default("PENDING_PROMOTION")
+  // Slice-15 links back to the promoted FinancialValue if this row
+  // was folded into the case data. The FK is on FinancialValue.sourceRowId.
+  promotedValues   FinancialValue[]
+
+  @@index([caseId, provider, reportType])
+  @@index([ingestionRunId])
+  @@index([caseId, status])
+  @@index([caseId, provider, externalRowId])
+}
+
+// Records a single Excel import cycle: upload → validate → diff →
+// (optionally) apply. Every step writes to this row so the reviewer
+// can audit what was proposed vs. what was applied.
+model ExcelImportRun {
+  id                  String   @id @default(cuid())
+  caseId              String
+  case                Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  //   FINANCIAL_LEDGER | NORMALIZATION | VALUATION | TIE_OUTS
+  templateKind        String
+  //   'v1', 'v2' — pin the template version so the parser knows the
+  //   column shape.
+  templateVersion     String
+  filename            String
+  fileSha256          String   @db.VarChar(64)
+  detectedCaseId      String?  // read from workbook metadata
+  //   PENDING_REVIEW | APPLIED | REJECTED | FAILED_VALIDATION
+  status              String   @default("PENDING_REVIEW")
+  triggeredBy         String
+  createdAt           DateTime @default(now())
+  reviewedAt          DateTime?
+  reviewedBy          String?
+  appliedAt           DateTime?
+  appliedBy           String?
+  //   { errors: string[], warnings: string[] }
+  validationSummary   Json?
+  //   Structured proposed changes, kept so the reviewer sees exactly
+  //   what would land. Persisted BEFORE any actual write.
+  proposedChanges     Json?
+  //   { updates: n, inserts: n, protected: n }
+  diffSummary         Json?
+  // 1:1 with AccountingIngestionRun so promoted rows show up in the
+  // same source-row surface as connector-based imports.
+  ingestionRun        AccountingIngestionRun?
+
+  @@index([caseId, templateKind])
+  @@index([caseId, status])
+}
+
 
 
 
