@@ -159,6 +159,24 @@ describe('repository shape (Slice 0 baseline)', () => {
     'src/components/portal-uploader.tsx',
     'docs/migrations/slice-12-client-portal.sql',
     'docs/architecture/CLIENT_PORTAL_REQUESTS.md',
+    // Slice 13 — professional valuation engine v2
+    'src/lib/valuation-v2/statuses.ts',
+    'src/lib/valuation-v2/dcf.ts',
+    'src/lib/valuation-v2/cap-earnings.ts',
+    'src/lib/valuation-v2/market.ts',
+    'src/lib/valuation-v2/asset.ts',
+    'src/lib/valuation-v2/bridge.ts',
+    'src/lib/valuation-v2/ownership.ts',
+    'src/lib/valuation-v2/reconciliation.ts',
+    'src/lib/valuation-v2/scenarios.ts',
+    'src/lib/valuation-v2/assumption-events.ts',
+    'src/app/actions/valuation-engagement.ts',
+    'src/app/actions/valuation-assumptions.ts',
+    'src/app/actions/valuation-compute.ts',
+    'src/app/actions/ownership-adjustments.ts',
+    'src/components/valuation-workbench.tsx',
+    'docs/migrations/slice-13-valuation-v2.sql',
+    'docs/architecture/VALUATION_ENGINE_V2.md',
   ])('exists: %s', (rel) => {
     expect(existsSync(p(rel))).toBe(true)
   })
@@ -202,6 +220,10 @@ describe('repository shape (Slice 0 baseline)', () => {
       'src/app/actions/portal.ts',
       'src/app/actions/portal-invites.ts',
       'src/app/actions/request-completeness.ts',
+      'src/app/actions/valuation-engagement.ts',
+      'src/app/actions/valuation-assumptions.ts',
+      'src/app/actions/valuation-compute.ts',
+      'src/app/actions/ownership-adjustments.ts',
     ]
     for (const rel of actionFiles) {
       const head = readFileSync(p(rel), 'utf8').slice(0, 40)

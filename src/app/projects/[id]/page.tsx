@@ -61,6 +61,7 @@ import { NormalizationWorkbench } from "@/components/normalization-workbench"
 import { CaseTeamPanel } from "@/components/case-team-panel"
 import { ReviewQueuePanel } from "@/components/review-queue-panel"
 import { RequestListPanel } from "@/components/request-list-panel"
+import { ValuationWorkbench } from "@/components/valuation-workbench"
 import { OverrideDialog } from "@/components/override-dialog"
 import { AuditLogPanel } from "@/components/audit-log-panel"
 import { AuditIntegrityBadge } from "@/components/audit-integrity-badge"
@@ -729,6 +730,10 @@ export default function ProjectDetail() {
               <TabsTrigger value="requests" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <ClipboardList className="mr-2 h-4 w-4" />
                 Requests
+              </TabsTrigger>
+              <TabsTrigger value="workbench" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <Calculator className="mr-2 h-4 w-4" />
+                Workbench
               </TabsTrigger>
               <TabsTrigger value="team" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <ShieldCheck className="mr-2 h-4 w-4" />
@@ -1502,6 +1507,19 @@ export default function ProjectDetail() {
             </TabsContent>
 
             {/* ─── TEAM & REVIEW (Slice 11) ────────────────────────────── */}
+            {/* ─── VALUATION WORKBENCH (Slice 13) ────────────────────────── */}
+            <TabsContent value="workbench">
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-black text-primary tracking-tight">Professional Valuation Workbench</h2>
+                  <p className="text-sm text-muted-foreground font-medium">
+                    Structured multi-approach valuation with per-scenario reconciliation. All discounts require professional approval — nothing is auto-applied.
+                  </p>
+                </div>
+                <ValuationWorkbench caseId={id as string} />
+              </div>
+            </TabsContent>
+
             {/* ─── REQUESTS (Slice 12) ───────────────────────────────────── */}
             <TabsContent value="requests">
               <div className="space-y-6">

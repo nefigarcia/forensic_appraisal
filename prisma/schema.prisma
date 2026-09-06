@@ -103,6 +103,8 @@ model Case {
   portalAccesses   PortalAccess[]
   requestItems     RequestItem[]
   reminderEvents   ReminderEvent[]
+  // Slice 13 — professional valuation engagements.
+  valuationEngagement ValuationEngagement?
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
 }
@@ -1062,4 +1064,350 @@ model RequestTemplateItem {
 
   @@index([templateId])
 }
+
+// ─────────────────────────────────────────────────
+// PROFESSIONAL VALUATION ENGINE V2 (Slice 13)
+// ─────────────────────────────────────────────────
+// A structured multi-approach valuation workbench. Distinct from the
+// Slice-0 `ValuationModel` (which stays for backward compatibility on
+// existing cases). A `ValuationEngagement` is 1:1 with a Case and
+// composes scenarios → approaches → per-approach detail rows.
+//
+// Every material assumption (a WACC input, a multiple, a growth rate,
+// an ownership discount) is a first-class `ValuationAssumption` row
+// carrying value + source + rationale + status + reviewer + history.
+// The math library only ever consumes APPROVED assumptions (or, if the
+// caller opts in, DRAFT for a preview); production reconciliations
+// refuse to compute unless every material assumption is APPROVED.
+//
+// Ownership discounts (DLOC / DLOM) NEVER auto-apply. They live as
+// `OwnershipAdjustment` rows and require `status = APPROVED` before
+// the reconciliation math includes them.
+//
+// See docs/architecture/VALUATION_ENGINE_V2.md for the full data model.
+
+model ValuationEngagement {
+  id             String   @id @default(cuid())
+  caseId         String   @unique
+  case           Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  // Human-editable summary — the valuation date and standard of value
+  // live on Case; this row carries workbench-level configuration.
+  valuationDate  DateTime?
+  standardOfValue String?  // FMV | FV | IV | BEV — mirrors Case, editable in workbench
+  premiseOfValue  String?  // GOING_CONCERN | LIQUIDATION | ORDERLY_LIQUIDATION | FORCED
+  interestType    String?  // CONTROLLING | MINORITY
+  marketability   String?  // MARKETABLE | NON_MARKETABLE
+  reportingCurrency String @default("USD")
+  status         String   @default("DRAFT")   // DRAFT | UNDER_REVIEW | FINAL
+  createdBy      String
+  finalizedBy    String?
+  finalizedAt    DateTime?
+  scenarios      ValuationScenario[]
+  assumptions    ValuationAssumption[]
+  ownershipAdjustments OwnershipAdjustment[]
+  reconciliations ValuationReconciliation[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([caseId])
+}
+
+// A scenario is a distinct set of approaches + reconciliation for the
+// same engagement. BASE / LOW / HIGH are seeded on creation; the firm
+// may add custom scenarios (e.g. "Recession Downside").
+model ValuationScenario {
+  id             String   @id @default(cuid())
+  engagementId   String
+  engagement     ValuationEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  key            String   // 'BASE' | 'LOW' | 'HIGH' | free-form key
+  name           String   // human-visible label
+  probability    Decimal? @db.Decimal(9, 6)  // 0..1 — optional probability weight; NOT used to auto-blend
+  displayOrder   Int      @default(0)
+  approaches     ValuationApproach[]
+  reconciliation ValuationReconciliation?
+  bridgeItems    EquityBridgeItem[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([engagementId, key], name: "ValuationScenario_engagement_key")
+  @@index([engagementId])
+}
+
+// One row per approach kind per scenario. Only ONE row per (scenario,
+// kind) — a scenario has at most one DCF, one Cap-of-Earnings, etc.
+// Multiple guideline companies / transactions live in child tables.
+//
+// The `indicatedValue` column is populated by the math library at
+// compute time and pinned to the row so the reconciliation reads
+// deterministic inputs. Recomputing an approach rewrites this column.
+model ValuationApproach {
+  id             String   @id @default(cuid())
+  scenarioId     String
+  scenario       ValuationScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  kind           String   // INCOME_CAP_EARNINGS | INCOME_DCF | MARKET_GPCM | MARKET_TRANSACTIONS | ASSET
+  label          String?  // optional human override; defaults to the kind label
+  weight         Decimal  @db.Decimal(9, 6) @default(0)     // reconciliation weight (0..1 or any positive scale)
+  isIncluded     Boolean  @default(true)                    // exclude without deleting
+  indicatedValue Decimal? @db.Decimal(19, 4)                // last computed enterprise-value output
+  computedAt     DateTime?
+  computationNote String? @db.Text                          // e.g. "requires approved WACC assumption"
+  capEarnings    CapEarningsDetail?
+  dcf            DcfDetail?
+  guidelineCompanies GuidelinePublicCompany[]
+  guidelineTransactions GuidelineTransaction[]
+  assetAdjustments AssetAdjustment[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([scenarioId, kind], name: "ValuationApproach_scenario_kind")
+  @@index([scenarioId])
+  @@index([kind])
+}
+
+// ─── Income: Capitalization of Earnings ───────────────────────────
+model CapEarningsDetail {
+  approachId          String @id
+  approach            ValuationApproach @relation(fields: [approachId], references: [id], onDelete: Cascade)
+  normalizedEarnings  Decimal? @db.Decimal(19, 4)
+  capitalizationRate  Decimal? @db.Decimal(9,  6)   // (discount rate - growth) as a decimal fraction
+  discountRate        Decimal? @db.Decimal(9,  6)
+  growthRate          Decimal? @db.Decimal(9,  6)
+  updatedAt           DateTime @updatedAt
+}
+
+// ─── Income: DCF ──────────────────────────────────────────────────
+model DcfDetail {
+  approachId          String @id
+  approach            ValuationApproach @relation(fields: [approachId], references: [id], onDelete: Cascade)
+  discountRate        Decimal? @db.Decimal(9,  6)
+  terminalGrowth      Decimal? @db.Decimal(9,  6)
+  terminalMethod      String   @default("GORDON") // GORDON | EXIT_MULTIPLE
+  terminalExitMultiple Decimal? @db.Decimal(9, 6)
+  taxRate             Decimal? @db.Decimal(9,  6)
+  midyearConvention   Boolean  @default(false)
+  pvSum               Decimal? @db.Decimal(19, 4)  // sum of per-year present values
+  pvTerminal          Decimal? @db.Decimal(19, 4)
+  indicatedValue      Decimal? @db.Decimal(19, 4)
+  forecastYears       DcfForecastYear[]
+  updatedAt           DateTime @updatedAt
+}
+
+model DcfForecastYear {
+  id              String @id @default(cuid())
+  dcfApproachId   String
+  dcfDetail       DcfDetail @relation(fields: [dcfApproachId], references: [approachId], onDelete: Cascade)
+  yearLabel       String                                  // 'Y1' | '2025' | ...
+  yearIndex       Int                                     // 1..N
+  revenue         Decimal? @db.Decimal(19, 4)
+  grossMarginPct  Decimal? @db.Decimal(9,  6)
+  ebitdaMargin    Decimal? @db.Decimal(9,  6)
+  ebitda          Decimal? @db.Decimal(19, 4)
+  depreciation    Decimal? @db.Decimal(19, 4)
+  amortization    Decimal? @db.Decimal(19, 4)
+  ebit            Decimal? @db.Decimal(19, 4)
+  taxes           Decimal? @db.Decimal(19, 4)
+  capex           Decimal? @db.Decimal(19, 4)
+  workingCapitalChange Decimal? @db.Decimal(19, 4)
+  fcff            Decimal? @db.Decimal(19, 4)             // free cash flow to firm
+  discountFactor  Decimal? @db.Decimal(9,  6)
+  presentValue    Decimal? @db.Decimal(19, 4)
+
+  @@unique([dcfApproachId, yearIndex], name: "DcfForecastYear_dcf_year")
+  @@index([dcfApproachId])
+}
+
+// ─── Market: Guideline Public Companies (GPCM) ────────────────────
+model GuidelinePublicCompany {
+  id           String @id @default(cuid())
+  approachId   String
+  approach     ValuationApproach @relation(fields: [approachId], references: [id], onDelete: Cascade)
+  companyName  String
+  ticker       String?
+  // Subject-company metrics used with the multiple to derive value.
+  // Kept per-row so a company with a stale metric can be excluded
+  // without touching the others.
+  revenue      Decimal? @db.Decimal(19, 4)
+  ebitda       Decimal? @db.Decimal(19, 4)
+  netIncome    Decimal? @db.Decimal(19, 4)
+  enterpriseValue Decimal? @db.Decimal(19, 4)
+  marketCap    Decimal? @db.Decimal(19, 4)
+  evRevenue    Decimal? @db.Decimal(9, 6)
+  evEbitda     Decimal? @db.Decimal(9, 6)
+  peRatio      Decimal? @db.Decimal(9, 6)
+  isIncluded   Boolean  @default(true)
+  weight       Decimal  @db.Decimal(9, 6) @default(1)
+  createdAt    DateTime @default(now())
+
+  @@index([approachId])
+}
+
+// ─── Market: Guideline Transactions ───────────────────────────────
+model GuidelineTransaction {
+  id           String @id @default(cuid())
+  approachId   String
+  approach     ValuationApproach @relation(fields: [approachId], references: [id], onDelete: Cascade)
+  target       String
+  acquirer     String?
+  transactionDate DateTime?
+  price        Decimal? @db.Decimal(19, 4)
+  revenue      Decimal? @db.Decimal(19, 4)
+  ebitda       Decimal? @db.Decimal(19, 4)
+  evRevenue    Decimal? @db.Decimal(9, 6)
+  evEbitda     Decimal? @db.Decimal(9, 6)
+  notes        String?  @db.Text
+  isIncluded   Boolean  @default(true)
+  weight       Decimal  @db.Decimal(9, 6) @default(1)
+  createdAt    DateTime @default(now())
+
+  @@index([approachId])
+}
+
+// ─── Asset Approach ───────────────────────────────────────────────
+model AssetAdjustment {
+  id             String @id @default(cuid())
+  approachId     String
+  approach       ValuationApproach @relation(fields: [approachId], references: [id], onDelete: Cascade)
+  side           String   // ASSET | LIABILITY
+  lineItem       String
+  reportedValue  Decimal  @db.Decimal(19, 4)
+  adjustment     Decimal  @db.Decimal(19, 4)  // signed — positive means write-up
+  fairValue      Decimal  @db.Decimal(19, 4)  // reportedValue + adjustment; recomputed on write
+  rationale      String?  @db.Text
+  displayOrder   Int      @default(0)
+
+  @@index([approachId, side])
+}
+
+// ─── Enterprise → Equity Bridge ───────────────────────────────────
+// A per-scenario ordered list of adjustments applied to the reconciled
+// Enterprise Value to arrive at Equity Value. Standard categories:
+//   CASH               (+)   add non-operating cash
+//   DEBT               (−)   subtract interest-bearing debt
+//   DEBT_LIKE          (−)   e.g. lease liabilities, unfunded pension
+//   NON_OPERATING      (±)   non-operating assets/liabilities
+//   PREFERRED_EQUITY   (−)
+//   NCI                (−)
+//   OTHER              (±)   custom
+model EquityBridgeItem {
+  id             String @id @default(cuid())
+  scenarioId     String
+  scenario       ValuationScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  category       String
+  label          String
+  amount         Decimal  @db.Decimal(19, 4)  // signed with respect to enterprise value
+  displayOrder   Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  @@index([scenarioId])
+}
+
+// ─── Ownership Adjustments (DLOC / DLOM / others) ─────────────────
+// Never auto-applied. Each row carries its own status; only APPROVED
+// rows are picked up by the reconciliation math. Multiple rows with
+// the same `kind` are allowed but only one may be APPROVED at a time
+// (enforced by application logic + the compound partial index below).
+model OwnershipAdjustment {
+  id             String @id @default(cuid())
+  engagementId   String
+  engagement     ValuationEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  kind           String   // DLOC | DLOM | KEY_PERSON | OTHER
+  label          String?
+  percent        Decimal  @db.Decimal(9, 6)  // 0..1 fractional discount (0.30 = 30 % discount)
+  ownershipPercent Decimal? @db.Decimal(9, 6) // 0..1 subject interest — informational for DLOC decisions
+  source         String?  @db.Text            // e.g. 'Mandelbaum factors', 'Restricted Stock Studies'
+  rationale      String?  @db.Text            // required before APPROVED
+  status         String   @default("DRAFT")   // DRAFT | PROPOSED | APPROVED | REJECTED | SUPERSEDED
+  proposedBy     String?
+  approvedBy     String?
+  approvedAt     DateTime?
+  rejectedBy     String?
+  rejectedAt     DateTime?
+  rejectionNote  String?  @db.Text
+  supersededBy   String?  // id of a newer row that replaced this
+  displayOrder   Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([engagementId, kind, status])
+  @@index([engagementId])
+}
+
+// ─── Material Assumptions ─────────────────────────────────────────
+// Polymorphic — an assumption can attach to the engagement itself, a
+// scenario, or a specific approach. `targetType` / `targetId` capture
+// the anchor; parity of `parent` fields keeps the FK queries fast.
+//
+// Every material assumption a report cites must be represented here
+// and be APPROVED before final reconciliation.
+model ValuationAssumption {
+  id             String @id @default(cuid())
+  engagementId   String
+  engagement     ValuationEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  targetType     String   // ENGAGEMENT | SCENARIO | APPROACH | DCF_YEAR | GPCM_ROW | TRANSACTION_ROW | ASSET_ROW | BRIDGE_ITEM | OWNERSHIP
+  targetId       String?
+  key            String   // stable machine key, e.g. 'wacc.riskFreeRate' | 'gpcm.evEbitda.median'
+  label          String
+  category       String?  // DISCOUNT_RATE | GROWTH | MULTIPLE | MARGIN | CAPEX | WORKING_CAPITAL | OTHER
+  valueString    String?  // canonical string form (Decimal.toString) — accepts non-money too
+  valueNumeric   Decimal? @db.Decimal(19, 6)  // parallel numeric view for filtering/aggregation
+  unit           String?  // 'RATE' | 'MONEY' | 'PERCENT' | 'MULTIPLE' | 'YEARS' | ...
+  source         String?  @db.Text            // where this came from — evidence citation, professional judgment, etc.
+  rationale      String?  @db.Text            // why this specific value
+  status         String   @default("DRAFT")   // DRAFT | PROPOSED | APPROVED | REJECTED | SUPERSEDED
+  proposedBy     String?
+  approvedBy     String?
+  approvedAt     DateTime?
+  rejectedBy     String?
+  rejectedAt     DateTime?
+  rejectionNote  String?  @db.Text
+  supersededBy   String?
+  events         AssumptionEvent[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([engagementId, status])
+  @@index([engagementId, key])
+  @@index([targetType, targetId])
+}
+
+// Append-only history for an assumption. Every material change (value,
+// status, reviewer decision) writes a row here. The most recent row's
+// `status` matches the parent row.
+model AssumptionEvent {
+  id             String @id @default(cuid())
+  assumptionId   String
+  assumption     ValuationAssumption @relation(fields: [assumptionId], references: [id], onDelete: Cascade)
+  action         String   // CREATE | UPDATE_VALUE | PROPOSE | APPROVE | REJECT | SUPERSEDE | REOPEN
+  userId         String?  // firm userId; NULL for system-triggered
+  oldValue       String?  @db.Text
+  newValue       String?  @db.Text
+  note           String?  @db.Text
+  createdAt      DateTime @default(now())
+
+  @@index([assumptionId, createdAt])
+}
+
+// ─── Reconciliation ───────────────────────────────────────────────
+// One row per scenario. Captures the weighted enterprise value, the
+// applied bridge, ownership discounts, and the final equity value.
+// The row is a snapshot — running `runReconciliation` overwrites it.
+model ValuationReconciliation {
+  id                     String @id @default(cuid())
+  engagementId           String
+  engagement             ValuationEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  scenarioId             String @unique
+  scenario               ValuationScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  enterpriseValue        Decimal? @db.Decimal(19, 4)  // weighted across approaches
+  bridgeNet              Decimal? @db.Decimal(19, 4)  // sum of EquityBridgeItem.amount
+  equityValue            Decimal? @db.Decimal(19, 4)  // enterprise + bridgeNet
+  ownershipDiscountApplied Decimal? @db.Decimal(9, 6) // cumulative fractional discount from APPROVED rows
+  ownershipValue         Decimal? @db.Decimal(19, 4)  // equityValue * (1 - discountApplied)
+  hasBlockingAssumptions Boolean  @default(false)     // true when any assumption is not APPROVED
+  computedAt             DateTime?
+  computedBy             String?
+  notes                  String?  @db.Text
+
+  @@index([engagementId])
+}
+
 
