@@ -104,9 +104,21 @@ export async function deleteAddBack(id: string) {
 export async function approveAddBack(id: string) {
   const { session, addBack: record } = await requireAddBackAccess(id, 'addback:approve')
 
+  // Slice 10 backward-compat: this legacy toggle sits alongside the
+  // workbench's status machine. Both columns are updated together so
+  // any reader (old or new) sees a consistent view.
+  const nextApproved = !record.isApproved
+  const now = new Date()
   const updated = await prisma.addBack.update({
     where: { id },
-    data: { isApproved: !record.isApproved, approvedBy: session.userId },
+    data: {
+      isApproved: nextApproved,
+      approvedBy: session.userId,
+      status:          nextApproved ? 'APPROVED' : 'DRAFT',
+      reviewedBy:      nextApproved ? session.userId : null,
+      reviewedAt:      nextApproved ? now            : null,
+      statusChangedAt: now,
+    },
   })
   await logAction({
     userId: session.userId,

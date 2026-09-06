@@ -123,6 +123,15 @@ describe('repository shape (Slice 0 baseline)', () => {
     'src/components/tie-out-dashboard.tsx',
     'docs/migrations/slice-9-tie-outs.sql',
     'docs/architecture/TIE_OUT_ENGINE.md',
+    // Slice 10 — normalization workbench
+    'src/lib/normalization/categories.ts',
+    'src/lib/normalization/statuses.ts',
+    'src/lib/normalization/bridge.ts',
+    'src/lib/normalization/warnings.ts',
+    'src/app/actions/normalization.ts',
+    'src/components/normalization-workbench.tsx',
+    'docs/migrations/slice-10-normalization.sql',
+    'docs/architecture/NORMALIZATION_WORKBENCH.md',
   ])('exists: %s', (rel) => {
     expect(existsSync(p(rel))).toBe(true)
   })
@@ -158,6 +167,7 @@ describe('repository shape (Slice 0 baseline)', () => {
       'src/app/actions/audit-integrity.ts',
       'src/app/actions/ai-executions.ts',
       'src/app/actions/tie-outs.ts',
+      'src/app/actions/normalization.ts',
     ]
     for (const rel of actionFiles) {
       const head = readFileSync(p(rel), 'utf8').slice(0, 40)

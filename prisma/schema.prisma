@@ -234,8 +234,23 @@ model AddBack {
   approvedBy      String?
   // Slice 7 — citations for the source documents an add-back derives from.
   citations       EvidenceCitation[]
+  // Slice 10 — normalization workbench fields.
+  //   status is the primary state; `isApproved` above is kept in sync
+  //   (isApproved == (status == 'APPROVED')) for backward-compat readers.
+  status          String    @default("DRAFT")   // DRAFT | PROPOSED | NEEDS_SUPPORT | APPROVED | REJECTED
+  direction       String    @default("ADD")     // ADD | SUBTRACT
+  recurring       String    @default("NONRECURRING") // RECURRING | NONRECURRING | ONE_TIME
+  taxTreatment    String?                       // PRE_TAX | AFTER_TAX | NOT_APPLICABLE
+  proposedBy      String?
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  statusChangedAt DateTime?
+  rejectionReason String?  @db.Text
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([caseId, status])
+  @@index([status])
 }
 
 // ─────────────────────────────────────────────────
