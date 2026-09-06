@@ -58,6 +58,8 @@ import { ConfidenceBadge } from "@/components/confidence-badge"
 import { CitationIndicator } from "@/components/citation-indicator"
 import { TieOutDashboard } from "@/components/tie-out-dashboard"
 import { NormalizationWorkbench } from "@/components/normalization-workbench"
+import { CaseTeamPanel } from "@/components/case-team-panel"
+import { ReviewQueuePanel } from "@/components/review-queue-panel"
 import { OverrideDialog } from "@/components/override-dialog"
 import { AuditLogPanel } from "@/components/audit-log-panel"
 import { AuditIntegrityBadge } from "@/components/audit-integrity-badge"
@@ -722,6 +724,10 @@ export default function ProjectDetail() {
               <TabsTrigger value="report" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <BookOpen className="mr-2 h-4 w-4" />
                 Report
+              </TabsTrigger>
+              <TabsTrigger value="team" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                Team & Review
               </TabsTrigger>
               <TabsTrigger value="audit" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <ShieldCheck className="mr-2 h-4 w-4" />
@@ -1487,6 +1493,23 @@ export default function ProjectDetail() {
                   </p>
                 </div>
                 <TieOutDashboard caseId={id as string} />
+              </div>
+            </TabsContent>
+
+            {/* ─── TEAM & REVIEW (Slice 11) ────────────────────────────── */}
+            <TabsContent value="team">
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-black text-primary tracking-tight">Engagement Team & Review</h2>
+                  <p className="text-sm text-muted-foreground font-medium">
+                    Not every firm member automatically has access to every confidential engagement. Once you list
+                    members here, only those users plus org administrators can reach this case.
+                  </p>
+                </div>
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <CaseTeamPanel caseId={id as string} />
+                  <ReviewQueuePanel caseId={id as string} />
+                </div>
               </div>
             </TabsContent>
 

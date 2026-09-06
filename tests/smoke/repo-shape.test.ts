@@ -132,6 +132,17 @@ describe('repository shape (Slice 0 baseline)', () => {
     'src/components/normalization-workbench.tsx',
     'docs/migrations/slice-10-normalization.sql',
     'docs/architecture/NORMALIZATION_WORKBENCH.md',
+    // Slice 11 — case team + review workflow
+    'src/lib/case-team/roles.ts',
+    'src/lib/reviews/statuses.ts',
+    'src/lib/reviews/targets.ts',
+    'src/app/actions/case-team.ts',
+    'src/app/actions/reviews.ts',
+    'src/app/actions/review-queue.ts',
+    'src/components/case-team-panel.tsx',
+    'src/components/review-queue-panel.tsx',
+    'docs/migrations/slice-11-case-team.sql',
+    'docs/architecture/CASE_TEAM_REVIEW_WORKFLOW.md',
   ])('exists: %s', (rel) => {
     expect(existsSync(p(rel))).toBe(true)
   })
@@ -168,6 +179,9 @@ describe('repository shape (Slice 0 baseline)', () => {
       'src/app/actions/ai-executions.ts',
       'src/app/actions/tie-outs.ts',
       'src/app/actions/normalization.ts',
+      'src/app/actions/case-team.ts',
+      'src/app/actions/reviews.ts',
+      'src/app/actions/review-queue.ts',
     ]
     for (const rel of actionFiles) {
       const head = readFileSync(p(rel), 'utf8').slice(0, 40)

@@ -52,6 +52,9 @@ model User {
   mfaSecret               MfaSecret?
   mfaBackupCodes          MfaBackupCode[]
   aiExecutions            AiExecution[]
+  // Slice 11 — engagement-level access
+  caseMemberships         CaseMember[]
+  reviewComments          ReviewComment[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 }
@@ -84,6 +87,14 @@ model Case {
   ttmReport        Json?                   // persisted normalized TTM report — avoids re-running AI on reload
   aiExecutions     AiExecution[]
   tieOuts          TieOut[]
+  // Slice 11 — engagement-level access control.
+  // When false, whole-org access still applies (Slice 1 semantics).
+  // When true, only CaseMembers (and org ADMINs) can reach the case.
+  // The flag is monotonic: adding the first CaseMember flips it to true
+  // and it stays true even if every member is later removed.
+  hasEngagementTeam Boolean                @default(false)
+  members          CaseMember[]
+  reviewItems      ReviewItem[]
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
 }
@@ -729,3 +740,86 @@ model TieOutItem {
   @@index([financialValueId])
   @@index([documentVersionId])
 }
+
+// ─────────────────────────────────────────────────
+// ENGAGEMENT TEAM + REVIEW WORKFLOW (Slice 11)
+// ─────────────────────────────────────────────────
+
+// CaseMember binds a user to a case with an engagement role. When
+// Case.hasEngagementTeam is true, the union of active CaseMembers plus
+// org-level ADMINs is the exclusive access set for the case. See
+// docs/architecture/CASE_TEAM_REVIEW_WORKFLOW.md for the two-layer
+// authz composition.
+model CaseMember {
+  id           String    @id @default(cuid())
+  caseId       String
+  case         Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  // Engagement role — distinct from org-level RBAC role.
+  //   ENGAGEMENT_PARTNER | MANAGER | SENIOR | ANALYST | REVIEWER |
+  //   READ_ONLY | EXTERNAL_COLLABORATOR
+  caseRole     String
+  addedBy      String?   // userId of the person who added this member
+  addedAt      DateTime  @default(now())
+  // Soft-delete: setting removedAt disables access without erasing history.
+  removedAt    DateTime?
+  removedBy    String?
+
+  @@unique([caseId, userId], name: "CaseMember_case_user")
+  @@index([caseId])
+  @@index([userId])
+}
+
+// A ReviewItem attaches a review lifecycle to any material target on a
+// case: financial values, add-backs, valuation assumptions, tie-out
+// discrepancies, report sections, documents. Polymorphic parent via
+// (targetType, targetId). Exactly one review item per target.
+model ReviewItem {
+  id                  String   @id @default(cuid())
+  caseId              String
+  case                Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  // Which material target this review references.
+  //   FINANCIAL_VALUE | ADDBACK | VALUATION_MODEL | ANOMALY_FLAG |
+  //   REPORT_SECTION | DOCUMENT | TIE_OUT
+  targetType          String
+  targetId            String
+
+  status              String   @default("DRAFT") // DRAFT | READY_FOR_REVIEW | CHANGES_REQUESTED | APPROVED
+  title               String
+  description         String?  @db.Text
+
+  createdBy           String   // userId
+  assignedTo          String?  // userId — reviewer
+  approvedBy          String?
+  approvedAt          DateTime?
+  changesRequestedBy  String?
+  changesRequestedAt  DateTime?
+  changesRequestedNote String? @db.Text
+
+  comments            ReviewComment[]
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([caseId, targetType, targetId], name: "ReviewItem_case_target")
+  @@index([caseId, status])
+  @@index([status])
+  @@index([assignedTo])
+}
+
+// Append-only conversation on a review item. No edits, no deletes at
+// the app layer — the review record is part of the audit trail.
+model ReviewComment {
+  id            String   @id @default(cuid())
+  reviewItemId  String
+  reviewItem    ReviewItem @relation(fields: [reviewItemId], references: [id], onDelete: Cascade)
+  authorId      String
+  author        User     @relation(fields: [authorId], references: [id])
+  body          String   @db.Text
+  createdAt     DateTime @default(now())
+
+  @@index([reviewItemId, createdAt])
+}
+

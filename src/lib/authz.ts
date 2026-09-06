@@ -93,15 +93,46 @@ export function requirePermission(session: SessionPayload, permission: Permissio
 // ─────────────────────────────────────────────────
 
 /** Verify a case belongs to the caller's org and (optionally) that the caller
- *  has a permission. Returns the case row. */
+ *  has a permission. Returns the case row.
+ *
+ *  Slice 11: when the case has an engagement team, non-ADMIN callers must
+ *  also be an *active* CaseMember (removedAt is null). Cases whose
+ *  `hasEngagementTeam` flag is still false keep whole-org access — Slice-1
+ *  semantics — so no existing caller breaks.
+ *
+ *  Cross-tenant and non-member cases both surface as `NotFoundError`
+ *  (indistinguishable by design; prevents id enumeration).
+ */
 export async function requireCaseAccess(caseId: string, permission?: Permission) {
   const session = await requireSession()
   const record = await prisma.case.findFirst({
     where: { id: caseId, organizationId: session.organizationId },
   })
   if (!record) throw new NotFoundError()
+
+  // Slice 11: engagement-team gate.
+  if ((record as any).hasEngagementTeam && session.role !== 'ADMIN') {
+    const member = await prisma.caseMember.findUnique({
+      where: { CaseMember_case_user: { caseId, userId: session.userId } },
+      select: { removedAt: true },
+    })
+    if (!member || member.removedAt) throw new NotFoundError()
+  }
+
   if (permission) requirePermission(session, permission)
   return { session, case: record }
+}
+
+/**
+ * Slice 11: convenience — resolve the caller's CaseMember row (if any).
+ * Returns null when there is no membership. Never throws on missing
+ * membership; use `requireCaseAccess` first if you want that behavior.
+ */
+export async function getCaseMembership(caseId: string, userId: string) {
+  return prisma.caseMember.findUnique({
+    where: { CaseMember_case_user: { caseId, userId } },
+    select: { caseRole: true, removedAt: true },
+  })
 }
 
 /** Verify a document belongs to a case in the caller's org. */
