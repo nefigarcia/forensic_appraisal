@@ -15,7 +15,7 @@
 import { prisma } from '@/lib/prisma'
 import { revalidatePath } from 'next/cache'
 import { logAction } from '@/lib/audit'
-import { requireCaseAccess, requireAddBackAccess, NotFoundError } from '@/lib/authz'
+import { requireCaseAccess, requireAddBackAccess } from '@/lib/authz'
 import { money, moneySum, readMoney, serializeMoney, type Money, type MoneyInput } from '@/lib/money'
 import {
   canTransition,
@@ -521,6 +521,3 @@ function rowToQueue(row: any): ReviewerQueueRow {
   }
 }
 
-// Keep the PERIODS export importable from this module for the UI.
-export { PERIODS as ADJUSTMENT_PERIODS }
-void NotFoundError  // keep import referenced for future extensions
