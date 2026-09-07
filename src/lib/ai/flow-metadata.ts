@@ -98,6 +98,14 @@ export const FLOW_METADATA: Record<string, FlowMetadata> = {
     modelProvider:     'googleai',
     modelName:         'gemini-2.5-flash',
   },
+  // Slice 16 — natural-language question → filter-DSL planner.
+  caseSearchPlannerFlow: {
+    flowName:          'caseSearchPlannerFlow',
+    flowVersion:       'v1',
+    promptTemplateKey: 'case-search-planner.v1-whitelisted',
+    modelProvider:     'googleai',
+    modelName:         'gemini-2.5-flash',
+  },
 }
 
 export function metadataFor(flowName: string): FlowMetadata {

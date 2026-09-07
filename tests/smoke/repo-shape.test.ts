@@ -210,6 +210,16 @@ describe('repository shape (Slice 0 baseline)', () => {
     'src/components/accounting-integrations-panel.tsx',
     'docs/migrations/slice-15-accounting-integrations.sql',
     'docs/architecture/ACCOUNTING_INTEGRATIONS.md',
+    // Slice 16 — institutional valuation intelligence
+    'src/lib/search/query-shape.ts',
+    'src/lib/search/filters.ts',
+    'src/lib/search/permissions.ts',
+    'src/lib/search/index-refresh.ts',
+    'src/ai/flows/case-search-planner-flow.ts',
+    'src/app/actions/case-search.ts',
+    'src/components/case-search-panel.tsx',
+    'docs/migrations/slice-16-case-search.sql',
+    'docs/architecture/CASE_SEARCH.md',
   ])('exists: %s', (rel) => {
     expect(existsSync(p(rel))).toBe(true)
   })
@@ -262,6 +272,7 @@ describe('repository shape (Slice 0 baseline)', () => {
       'src/app/actions/report-export.ts',
       'src/app/actions/accounting-imports.ts',
       'src/app/actions/accounting-connectors.ts',
+      'src/app/actions/case-search.ts',
     ]
     for (const rel of actionFiles) {
       const head = readFileSync(p(rel), 'utf8').slice(0, 40)
