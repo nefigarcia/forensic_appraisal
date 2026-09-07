@@ -220,6 +220,27 @@ describe('repository shape (Slice 0 baseline)', () => {
     'src/components/case-search-panel.tsx',
     'docs/migrations/slice-16-case-search.sql',
     'docs/architecture/CASE_SEARCH.md',
+    // Slice 17 — production hardening + release gate
+    '.github/workflows/ci.yml',
+    'src/lib/observability/logger.ts',
+    'src/lib/reliability/idempotency.ts',
+    'src/lib/reliability/retry.ts',
+    'src/lib/ai/regression-harness.ts',
+    'src/app/api/health/route.ts',
+    'src/app/api/health/ready/route.ts',
+    'playwright.config.ts',
+    'tests/e2e/full-workflow.spec.ts',
+    'tests/fixtures/ai-regression/fixtures.ts',
+    'docs/production/DEPLOYMENT_GUIDE.md',
+    'docs/production/SECURITY_MODEL.md',
+    'docs/production/TENANT_MODEL.md',
+    'docs/production/EVIDENCE_MODEL.md',
+    'docs/production/AI_GOVERNANCE.md',
+    'docs/production/BACKUP_RECOVERY.md',
+    'docs/production/INCIDENT_RESPONSE.md',
+    'docs/production/SECURITY_REVIEW.md',
+    'docs/production/PERFORMANCE_REVIEW.md',
+    'docs/production/READINESS_ASSESSMENT.md',
   ])('exists: %s', (rel) => {
     expect(existsSync(p(rel))).toBe(true)
   })
