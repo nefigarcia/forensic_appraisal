@@ -30,6 +30,15 @@ model Organization {
   users                 User[]
   cases                 Case[]
   connectors            ExternalConnector[]
+  aiExecutions          AiExecution[]
+  // Slice 12 — firm-owned request-list templates.
+  requestTemplates      RequestTemplate[]
+  // Slice 14 — firm-owned standards checklists.
+  standardsChecklists   StandardsChecklist[]
+  // Slice 15 — per-case accounting connectors (QBO/Xero/Sage/NetSuite).
+  accountingConnectors  AccountingConnector[]
+  // Slice 16 — org-scoped AI case-search planner runs.
+  aiSearchRuns          AiCaseSearchRun[]
 }
 
 model User {
@@ -41,6 +50,19 @@ model User {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
   auditLogs      AuditLog[]
+  // Slice 2 — auth hardening
+  emailVerifiedAt         DateTime?
+  passwordChangedAt       DateTime?
+  mfaEnabled              Boolean                  @default(false)
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  sessionRevocations      SessionRevocation[]
+  mfaSecret               MfaSecret?
+  mfaBackupCodes          MfaBackupCode[]
+  aiExecutions            AiExecution[]
+  // Slice 11 — engagement-level access
+  caseMemberships         CaseMember[]
+  reviewComments          ReviewComment[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 }
@@ -71,6 +93,39 @@ model Case {
   auditLogs        AuditLog[]
   insights         CaseInsight[]
   ttmReport        Json?                   // persisted normalized TTM report — avoids re-running AI on reload
+  aiExecutions     AiExecution[]
+  tieOuts          TieOut[]
+  // Slice 11 — engagement-level access control.
+  // When false, whole-org access still applies (Slice 1 semantics).
+  // When true, only CaseMembers (and org ADMINs) can reach the case.
+  // The flag is monotonic: adding the first CaseMember flips it to true
+  // and it stays true even if every member is later removed.
+  hasEngagementTeam Boolean                @default(false)
+  members          CaseMember[]
+  reviewItems      ReviewItem[]
+  // Slice 12 — request lists (PBC) and client portal contacts.
+  requestLists     RequestList[]
+  clientContacts   ClientContact[]
+  portalAccesses   PortalAccess[]
+  requestItems     RequestItem[]
+  reminderEvents   ReminderEvent[]
+  // Slice 13 — professional valuation engagements.
+  valuationEngagement ValuationEngagement?
+  // Slice 14 — evidence-grounded report composer.
+  report              Report?
+  // Slice 15 — accounting connectors + spreadsheet ingestion.
+  accountingConnectors   AccountingConnector[]
+  accountingSourceRows   AccountingSourceRow[]
+  accountingIngestionRuns AccountingIngestionRun[]
+  excelImportRuns        ExcelImportRun[]
+  // Slice 16 — subject-company geography (used by the knowledge-base
+  // cross-case search). Free-form; ISO/USPS codes preferred. Populated
+  // by the engagement-setup UI; nullable so existing cases are
+  // backwards-compatible until a professional fills them in.
+  subjectState     String?
+  subjectCity      String?
+  subjectCountry   String?
+  searchIndex      CaseSearchIndex?
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
 }
@@ -87,11 +142,72 @@ model Document {
   type           String
   size           String
   s3Key          String?
-  sha256Hash     String?          // tamper-evident integrity hash
+  sha256Hash     String?          // tamper-evident integrity hash of the current version
   status         String           @default("PENDING") // PENDING | EXTRACTED | VERIFIED | REJECTED
   pageCount      Int?
   financialValues FinancialValue[]
+  // ── Slice 5: versioning + archival ───────────────────────────────────
+  // Denormalized pointer to the latest non-archived DocumentVersion. Kept
+  // in sync by addDocument; readers that only need the current file can
+  // continue to use Document.s3Key / Document.sha256Hash without joining.
+  currentVersionId String?
+  currentVersion   DocumentVersion? @relation("CurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  versions         DocumentVersion[] @relation("DocumentVersions")
+  // Soft-delete flag. deleteDocument sets this true; the row and S3 objects
+  // are retained (chain of custody). A future admin-only hard-delete slice
+  // can add real destruction with legal-hold checks.
+  isArchived       Boolean          @default(false)
+  archivedAt       DateTime?
+  archivedBy       String?
+  archiveReason    String?          @db.Text
+  // Slice 12 — attach documents to a client-facing RequestItem.
+  requestItemLinks RequestItemDocument[]
   createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([caseId, isArchived])
+}
+
+// Immutable per-upload version. Every re-upload creates a new row —
+// existing rows are never updated except to flip `isArchived`. The pair
+// (documentId, versionNumber) is a stable public identifier.
+model DocumentVersion {
+  id            String   @id @default(cuid())
+  documentId    String
+  document      Document @relation("DocumentVersions", fields: [documentId], references: [id], onDelete: Cascade)
+  versionNumber Int      // 1, 2, 3… per document
+  s3Key         String   // orgs/<org>/cases/<case>/documents/<doc>/versions/<n>/<name>
+  sha256Hash    String   // per-version — independent of any other version's hash
+  sizeBytes     BigInt
+  mimeType      String   // detected via magic-byte sniff, not client-declared
+  originalName  String   // the filename as the analyst uploaded it
+  uploadedBy    String   // userId (nullable string for legacy backfill placeholder)
+  uploadedAt    DateTime @default(now())
+
+  // Malware scan hook — populated asynchronously by the scanner. NullScanner
+  // (default) transitions PENDING → CLEAN on upload; a real scanner would
+  // enqueue a job and update later. INFECTED versions cannot be downloaded.
+  scanStatus    String   @default("PENDING") // PENDING | SCANNING | CLEAN | INFECTED | ERROR
+  scanReport    String?  @db.Text
+  scannedAt     DateTime?
+
+  // Soft-delete at the version level. Archiving a version does not archive
+  // its parent Document; it only hides that specific upload.
+  isArchived    Boolean  @default(false)
+  archivedAt    DateTime?
+  archivedBy    String?
+  archiveReason String?  @db.Text
+
+  currentFor    Document[] @relation("CurrentVersion")
+  // Slice 7 — every citation points at a specific immutable version, so a
+  // future re-upload cannot invalidate the citation.
+  citations     EvidenceCitation[]
+  // Slice 9 — tie-out items may reference this specific version.
+  tieOutItems   TieOutItem[]
+
+  @@unique([documentId, versionNumber])
+  @@index([sha256Hash])
+  @@index([documentId, isArchived])
 }
 
 // ─────────────────────────────────────────────────
@@ -110,6 +226,9 @@ model FinancialValue {
   value            Float
   aiSuggestedValue Float?    // original AI-extracted value (immutable reference)
   confidence       Float?    // 0.0–1.0 from AI
+  // Slice 4 — decimal-safe shadow columns (Float above kept for read-fallback + UI display).
+  valueDecimal            Decimal? @db.Decimal(19, 4)
+  aiSuggestedValueDecimal Decimal? @db.Decimal(19, 4)
   sourceRef        String?   // e.g. "page 4, table 2, row 'Gross receipts'"
   currency         String    @default("USD")
   isVerified       Boolean   @default(false)
@@ -118,8 +237,35 @@ model FinancialValue {
   overrideReason   String?   @db.Text
   overriddenBy     String?   // userId
   overriddenAt     DateTime?
+  // Slice 7 — evidence-level citations. Every material extracted value can
+  // have one or more citations pointing at the immutable DocumentVersion
+  // where it was found. `sourceRef` (Slice 0 legacy string) remains as-is
+  // for backward-compat readers.
+  citations        EvidenceCitation[]
+  // Slice 8 — trace back to the AI execution that proposed this value.
+  // NULL for hand-entered rows and pre-Slice-8 extractions.
+  aiExecutionId    String?
+  aiExecution      AiExecution? @relation(fields: [aiExecutionId], references: [id])
+  // Slice 9 — feeds tie-out reconciliation items.
+  tieOutItems      TieOutItem[]
+  // Slice 15 — origin tag. Distinguishes AI-extracted values from
+  // rows promoted from a QuickBooks / Xero / Sage / NetSuite / Excel
+  // import. Never quietly overwritten — the UI badges values by
+  // origin so a reader always sees where a number came from.
+  //   AI       — AI extraction (default for legacy rows; see Slice 8)
+  //   HUMAN    — analyst hand-entered
+  //   QBO      — QuickBooks Online
+  //   XERO / SAGE / NETSUITE — reserved for future adapters
+  //   EXCEL    — imported from a ValuVault-exported workbook
+  origin           String    @default("AI")
+  sourceRowId      String?   // FK to AccountingSourceRow (nullable)
+  sourceRow        AccountingSourceRow? @relation(fields: [sourceRowId], references: [id], onDelete: SetNull)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
+
+  @@index([aiExecutionId])
+  @@index([caseId, origin])
+  @@index([sourceRowId])
 }
 
 // ─────────────────────────────────────────────────
@@ -137,11 +283,32 @@ model AddBack {
   ttm             Float?   // trailing twelve months
   aiSuggested     Boolean  @default(false)
   confidence      Float?
+  // Slice 4 — decimal-safe shadow columns
+  year2Decimal    Decimal? @db.Decimal(19, 4)
+  year1Decimal    Decimal? @db.Decimal(19, 4)
+  ttmDecimal      Decimal? @db.Decimal(19, 4)
   rationale       String?  @db.Text // required before report generation
   isApproved      Boolean  @default(false)
   approvedBy      String?
+  // Slice 7 — citations for the source documents an add-back derives from.
+  citations       EvidenceCitation[]
+  // Slice 10 — normalization workbench fields.
+  //   status is the primary state; `isApproved` above is kept in sync
+  //   (isApproved == (status == 'APPROVED')) for backward-compat readers.
+  status          String    @default("DRAFT")   // DRAFT | PROPOSED | NEEDS_SUPPORT | APPROVED | REJECTED
+  direction       String    @default("ADD")     // ADD | SUBTRACT
+  recurring       String    @default("NONRECURRING") // RECURRING | NONRECURRING | ONE_TIME
+  taxTreatment    String?                       // PRE_TAX | AFTER_TAX | NOT_APPLICABLE
+  proposedBy      String?
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  statusChangedAt DateTime?
+  rejectionReason String?  @db.Text
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  @@index([caseId, status])
+  @@index([status])
 }
 
 // ─────────────────────────────────────────────────
@@ -197,6 +364,30 @@ model ValuationModel {
   // Reconciliation notes
   reconciliationNote String? @db.Text
 
+  // Slice 4 — decimal-safe shadow columns.
+  //  - Money fields: Decimal(19, 4)
+  //  - Rates / multiples / weights: Decimal(9, 6)
+  ebitdaDecimal            Decimal? @db.Decimal(19, 4)
+  multiplierDecimal        Decimal? @db.Decimal(9,  6)
+  growthRateDecimal        Decimal? @db.Decimal(9,  6)
+  dcfYear1Decimal          Decimal? @db.Decimal(19, 4)
+  dcfYear2Decimal          Decimal? @db.Decimal(19, 4)
+  dcfYear3Decimal          Decimal? @db.Decimal(19, 4)
+  dcfYear4Decimal          Decimal? @db.Decimal(19, 4)
+  dcfYear5Decimal          Decimal? @db.Decimal(19, 4)
+  terminalGrowthDecimal    Decimal? @db.Decimal(9,  6)
+  discountRateDecimal      Decimal? @db.Decimal(9,  6)
+  riskFreeRateDecimal      Decimal? @db.Decimal(9,  6)
+  equityRiskPremiumDecimal Decimal? @db.Decimal(9,  6)
+  sizePremiumDecimal       Decimal? @db.Decimal(9,  6)
+  specificRiskDecimal      Decimal? @db.Decimal(9,  6)
+  indicatedValueDecimal    Decimal? @db.Decimal(19, 4)
+  weightDecimal            Decimal? @db.Decimal(9,  6)
+  // Slice 7 — valuation assumptions (WACC components, multiples, DCF cash
+  // flows) can eventually be traced back to source evidence. The relation
+  // is here now; UI wire-in is a future slice.
+  citations                EvidenceCitation[]
+
   createdAt        DateTime @default(now())
 }
 
@@ -245,9 +436,10 @@ model AuditLog {
   id          String   @id @default(cuid())
   caseId      String?
   case        Case?    @relation(fields: [caseId], references: [id])
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  action      String   // UPLOAD_DOC | RUN_EXTRACTION | ACCEPT_VALUE | OVERRIDE_VALUE | REJECT_VALUE | LOCK_VALUE | APPROVE_BATCH | CREATE_CASE | GENERATE_REPORT | RUN_ANOMALY | etc.
+  // Slice 2 — auth events like LOGIN_FAIL for an unknown email have no user.
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  action      String   // UPLOAD_DOC | RUN_EXTRACTION | ACCEPT_VALUE | OVERRIDE_VALUE | REJECT_VALUE | LOCK_VALUE | APPROVE_BATCH | CREATE_CASE | GENERATE_REPORT | RUN_ANOMALY | LOGIN_* | LOGOUT | PASSWORD_* | etc.
   targetModel String?  // "FinancialValue" | "Document" | "AddBack" | "ValuationModel"
   targetId    String?
   oldValue    String?  @db.Text  // JSON
@@ -255,9 +447,22 @@ model AuditLog {
   note        String?  @db.Text
   ipAddress   String?
   createdAt   DateTime @default(now())
+  // ── Slice 6: tamper-evident hash chain ───────────────────────────────
+  // Rows written before Slice 6 have all of these NULL and are treated by
+  // the verifier as "pre-chain" (skipped, not counted as tamper). New
+  // events form a chain keyed by `chainKey` and ordered by `sequence`.
+  // `eventHash` = SHA-256(canonicalPayload including previousHash).
+  chainKey     String?  // 'org:<id>' | 'global:anon'
+  sequence     Int?     // per-chainKey monotonic; enforced by @@unique below
+  previousHash String?  @db.VarChar(64)   // hex sha-256, or null for the genesis row
+  eventHash    String?  @db.VarChar(64)
+  hashVersion  String?  @db.VarChar(8)    // 'v1' for the current canonical format
 
   @@index([caseId, createdAt])
   @@index([userId])
+  @@index([action, createdAt])
+  @@index([chainKey, sequence])
+  @@unique([chainKey, sequence], name: "AuditLog_chainKey_sequence_key")
 }
 
 // ─────────────────────────────────────────────────
@@ -269,8 +474,18 @@ model ExternalConnector {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
   provider       String
+  // Legacy plaintext columns retained during migration to envelope encryption.
+  // Cleared on every new write by encryptConnectorSecrets(). Rows that still
+  // carry plaintext here have not yet been passed through the Slice 3
+  // migration script.
   accessToken    String?      @db.Text
   refreshToken   String?      @db.Text
+  // Slice 3 — envelope-encrypted secrets.
+  // Shape: { version: 'v1', secrets: { <name>: { ciphertext, dek } } }
+  encryptedSecrets     Json?
+  // Which KEK produced the wrap ('kms:<arn>' or 'local-v1'); used by
+  // rotation queries to find rows still keyed to an old KEK.
+  encryptionKeyVersion String?
   expiresAt      DateTime?
   status         String       @default("CONNECTED")
   lastSync       DateTime?    @default(now())
@@ -278,4 +493,1462 @@ model ExternalConnector {
   updatedAt      DateTime     @updatedAt
 
   @@unique([organizationId, provider])
+  @@index([encryptionKeyVersion])
 }
+
+// ─────────────────────────────────────────────────
+// AUTH HARDENING (Slice 2)
+// ─────────────────────────────────────────────────
+
+// Records the jti of each revoked session JWT so getSession() can reject
+// cookies that are otherwise cryptographically valid. Rows are pruned
+// after their originating token's natural expiry.
+model SessionRevocation {
+  jti        String   @id                    // JWT jti
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  reason     String                          // LOGOUT | PASSWORD_CHANGE | ADMIN | SUSPICIOUS
+  revokedAt  DateTime @default(now())
+  expiresAt  DateTime                        // when the underlying JWT would've expired
+
+  @@index([expiresAt])
+  @@index([userId])
+}
+
+// SHA-256(raw token) is the primary key — the raw token exists only in
+// the outgoing email. Consumed tokens are retained (audit trail) but
+// cannot be re-used because of the consumedAt check.
+model PasswordResetToken {
+  tokenHash  String    @id
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+model EmailVerificationToken {
+  tokenHash  String    @id
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, expiresAt])
+}
+
+// One row per real login attempt (rejected-by-rate-limit attempts do NOT
+// write here — they only emit an AuditLog LOGIN_RATE_LIMITED event).
+// Used by the rate limiter and by anomaly-detection dashboards.
+model LoginAttempt {
+  id         String   @id @default(cuid())
+  email      String                          // normalized lowercase
+  ipAddress  String?
+  ok         Boolean
+  reason     String?                         // BAD_PASSWORD | UNKNOWN_USER | MFA_FAIL
+  createdAt  DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([createdAt])
+}
+
+// TOTP shared secret. verifiedAt remains null while enrollment is
+// pending; a successful first code sets it.
+model MfaSecret {
+  userId     String    @id
+  user       User      @relation(fields: [userId], references: [id])
+  secret     String                          // base32 TOTP shared secret
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+}
+
+// Single-use recovery codes; codeHash = SHA-256(plaintext). Used codes
+// are retained for audit but cannot be re-consumed.
+model MfaBackupCode {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────
+// EVIDENCE CITATIONS (Slice 7)
+// ─────────────────────────────────────────────────
+// A citation ties a material forensic value (FinancialValue, AddBack, or
+// a valuation assumption on ValuationModel) back to a specific,
+// *immutable* DocumentVersion. Slice 5's version model guarantees that a
+// citation to v2 remains valid even when v3 supersedes it — the bytes
+// referenced by v2 don't change.
+//
+// isConfident is the anti-hallucination guard. When the AI can't
+// confidently locate a value, it emits a citation with isConfident=false
+// and NULLs the coordinate fields. The row still exists so the UI can
+// distinguish "AI tried but couldn't locate" from "no citation attempt
+// at all". Rule 9.
+model EvidenceCitation {
+  id                String   @id @default(cuid())
+  documentVersionId String
+  documentVersion   DocumentVersion @relation(fields: [documentVersionId], references: [id])
+
+  // Polymorphic parent — exactly one of these is set per row. Enforced
+  // by application logic (see src/lib/citations/parent.ts) since Prisma
+  // does not have a native discriminated-relation type.
+  financialValueId  String?
+  financialValue    FinancialValue? @relation(fields: [financialValueId], references: [id], onDelete: Cascade)
+  addBackId         String?
+  addBack           AddBack?        @relation(fields: [addBackId], references: [id], onDelete: Cascade)
+  valuationModelId  String?
+  valuationModel    ValuationModel? @relation(fields: [valuationModelId], references: [id], onDelete: Cascade)
+
+  // Location within the source document.
+  pageNumber        Int?
+  sourceLabel       String?  // human-readable, e.g. "Income Statement, row 'Gross Revenue'"
+  tableName         String?
+  rowLabel          String?
+  columnLabel       String?
+  // Optional structured bounding box: { x, y, w, h, unit: 'norm'|'pt'|'px' }.
+  // Different extractors use different conventions; we record the unit
+  // alongside the coordinates so the renderer can interpret them.
+  boundingBox       Json?
+
+  // Raw substring captured at extraction time.
+  rawText           String?  @db.Text
+
+  // Extractor provenance.
+  extractor         String?  // 'ai-genkit-v1' | 'analyst' | 'legacy-backfill'
+  extractorVersion  String?
+  confidence        Float?
+
+  // Anti-hallucination flag. False when the AI (or legacy backfill) had
+  // to record a citation without being able to pin the actual location.
+  isConfident       Boolean  @default(true)
+
+  createdAt         DateTime @default(now())
+
+  @@index([documentVersionId])
+  @@index([financialValueId])
+  @@index([addBackId])
+  @@index([valuationModelId])
+}
+
+// ─────────────────────────────────────────────────
+// AI EXECUTION REGISTRY (Slice 8)
+// ─────────────────────────────────────────────────
+// Every user-triggered AI flow invocation writes exactly one row here.
+// The row records who ran what, against which document versions, and
+// what came out — WITHOUT ever storing the raw prompt, the raw model
+// output, or the document bytes. The input hash is computed after
+// scrubbing data URIs and known secret keys.
+//
+// Values proposed by an AI run link back via FinancialValue.aiExecutionId,
+// so any material fact can be traced to a single execution + a single
+// prompt-template hash + a single set of source DocumentVersion IDs.
+model AiExecution {
+  id                 String   @id @default(cuid())
+  organizationId     String
+  organization       Organization @relation(fields: [organizationId], references: [id])
+  caseId             String?
+  case               Case?    @relation(fields: [caseId], references: [id])
+  userId             String
+  user               User     @relation(fields: [userId], references: [id])
+
+  // Flow identity
+  flowName           String   // 'financialDocumentExtractionFlow' | ...
+  flowVersion        String?  // human label, bumped alongside the prompt
+  promptTemplateHash String?  // sha256 of the prompt template body, auto-computed
+  promptTemplateKey  String?  // stable key that survives whitespace edits
+
+  // Model identity
+  modelProvider      String   // 'googleai'
+  modelName          String   // 'gemini-2.5-flash'
+  modelVersion       String?  // if the API exposes one
+
+  // Data provenance (never the document bytes themselves)
+  inputHash          String   // sha256 of the scrubbed canonicalized input
+  outputHash         String?  // sha256 of the canonicalized output (null on failure)
+  // JSON array of DocumentVersion ids that fed this execution. Slice 5
+  // guarantees those versions are immutable, so this list is enough to
+  // reproduce the source-document identity of any given run.
+  documentVersionIds Json?
+
+  // Timing + status
+  startedAt          DateTime @default(now())
+  completedAt        DateTime?
+  durationMs         Int?
+  status             String   @default("RUNNING") // RUNNING | SUCCESS | FAILURE
+  errorCategory      String?  // MODEL_TIMEOUT | SCHEMA_VALIDATION | RATE_LIMIT | REFUSED | INFRA | UNKNOWN
+  errorMessage       String?  @db.Text
+
+  // Cost / tokens — optional; populated when the model exposes them.
+  inputTokens        Int?
+  outputTokens       Int?
+  totalTokens        Int?
+  estimatedCostUsd   Decimal? @db.Decimal(10, 6)
+
+  // Aggregate human review of the run. Individual FinancialValue
+  // reviewStatus already tracks per-row acceptance; this column is the
+  // "execution as a whole" verdict, updated explicitly (not derived).
+  reviewStatus       String   @default("PENDING") // PENDING | ACCEPTED | REJECTED | OVERRIDDEN | MIXED
+  reviewedBy         String?
+  reviewedAt         DateTime?
+
+  createdAt          DateTime @default(now())
+
+  financialValues    FinancialValue[]
+  // Slice 12 — request-item completeness detection runs.
+  requestItems       RequestItem[]
+  // Slice 14 — report-section drafts generated by this execution.
+  reportSectionVersions ReportSectionVersion[]
+  // Slice 16 — AI-planned case-search runs.
+  caseSearchRuns        AiCaseSearchRun[]
+
+  @@index([organizationId, createdAt])
+  @@index([caseId, createdAt])
+  @@index([userId])
+  @@index([flowName, createdAt])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────
+// TIE-OUT ENGINE (Slice 9)
+// ─────────────────────────────────────────────────
+// A TieOut represents one reconciliation task: a specific (concept, year)
+// pair on a specific case, e.g. "Revenue for 2024". Its TieOutItem rows
+// hold the individual values pulled from different evidence sources
+// (Tax Return, P&L, GL, Bank Confirmation, ...).
+//
+// Status is computed from the item values + the tolerance rules on the
+// tie-out itself. The verdict is one of:
+//   TIED               all items numerically equal
+//   WITHIN_TOLERANCE   max pairwise difference within tolerance
+//   DISCREPANCY        outside tolerance; needs analyst review
+//   UNRESOLVED         < 2 items — can't reconcile a single source
+//   RESOLVED           analyst has explicitly resolved a DISCREPANCY;
+//                      the row remains visible (never auto-hidden)
+//
+// Tolerance is per-tie-out with per-concept defaults. Both an absolute
+// dollar tolerance and a percent-of-median tolerance are supported; a
+// difference is "within tolerance" if it satisfies EITHER.
+model TieOut {
+  id                String   @id @default(cuid())
+  caseId            String
+  case              Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  concept           String   // REVENUE | EBITDA | NET_INCOME | CASH | ACCOUNTS_RECEIVABLE | ACCOUNTS_PAYABLE | TOTAL_ASSETS | TOTAL_LIABILITIES
+  year              String   // 'TTM' | '2024' | ...
+
+  // Tolerance rules. NULL means "use the default for this concept".
+  toleranceAbsolute Decimal? @db.Decimal(19, 4)
+  tolerancePercent  Decimal? @db.Decimal(9,  6)   // 0.001 = 0.1%
+
+  status            String   @default("UNRESOLVED") // TIED | WITHIN_TOLERANCE | DISCREPANCY | UNRESOLVED | RESOLVED
+  // Max pairwise absolute difference across the items. Cached for the
+  // dashboard sort; the authoritative source is always the items.
+  maxDifference     Decimal? @db.Decimal(19, 4)
+
+  // Reviewer resolution
+  resolvedBy        String?  // userId
+  resolvedAt        DateTime?
+  resolutionNote    String?  @db.Text
+
+  items             TieOutItem[]
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // A given (case, concept, year) has exactly one TieOut. Re-running the
+  // builder upserts existing rows so a case never grows duplicate
+  // reconciliations for the same fact.
+  @@unique([caseId, concept, year])
+  @@index([caseId, status])
+  @@index([status])
+}
+
+model TieOutItem {
+  id                String   @id @default(cuid())
+  tieOutId          String
+  tieOut            TieOut   @relation(fields: [tieOutId], references: [id], onDelete: Cascade)
+
+  sourceLabel       String   // 'Income Statement' | 'Tax Return' | 'GL' | 'Bank' | ...
+  value             Decimal  @db.Decimal(19, 4)
+
+  // Optional back-links to the source. Both are SetNull because the
+  // TieOut is the entity of record for the reconciliation history —
+  // deleting a FinancialValue must not erase the audit trail.
+  financialValueId  String?
+  financialValue    FinancialValue?  @relation(fields: [financialValueId], references: [id], onDelete: SetNull)
+  documentVersionId String?
+  documentVersion   DocumentVersion? @relation(fields: [documentVersionId], references: [id], onDelete: SetNull)
+
+  createdAt         DateTime @default(now())
+
+  @@index([tieOutId])
+  @@index([financialValueId])
+  @@index([documentVersionId])
+}
+
+// ─────────────────────────────────────────────────
+// ENGAGEMENT TEAM + REVIEW WORKFLOW (Slice 11)
+// ─────────────────────────────────────────────────
+
+// CaseMember binds a user to a case with an engagement role. When
+// Case.hasEngagementTeam is true, the union of active CaseMembers plus
+// org-level ADMINs is the exclusive access set for the case. See
+// docs/architecture/CASE_TEAM_REVIEW_WORKFLOW.md for the two-layer
+// authz composition.
+model CaseMember {
+  id           String    @id @default(cuid())
+  caseId       String
+  case         Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  // Engagement role — distinct from org-level RBAC role.
+  //   ENGAGEMENT_PARTNER | MANAGER | SENIOR | ANALYST | REVIEWER |
+  //   READ_ONLY | EXTERNAL_COLLABORATOR
+  caseRole     String
+  addedBy      String?   // userId of the person who added this member
+  addedAt      DateTime  @default(now())
+  // Soft-delete: setting removedAt disables access without erasing history.
+  removedAt    DateTime?
+  removedBy    String?
+
+  @@unique([caseId, userId], name: "CaseMember_case_user")
+  @@index([caseId])
+  @@index([userId])
+}
+
+// A ReviewItem attaches a review lifecycle to any material target on a
+// case: financial values, add-backs, valuation assumptions, tie-out
+// discrepancies, report sections, documents. Polymorphic parent via
+// (targetType, targetId). Exactly one review item per target.
+model ReviewItem {
+  id                  String   @id @default(cuid())
+  caseId              String
+  case                Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  // Which material target this review references.
+  //   FINANCIAL_VALUE | ADDBACK | VALUATION_MODEL | ANOMALY_FLAG |
+  //   REPORT_SECTION | DOCUMENT | TIE_OUT
+  targetType          String
+  targetId            String
+
+  status              String   @default("DRAFT") // DRAFT | READY_FOR_REVIEW | CHANGES_REQUESTED | APPROVED
+  title               String
+  description         String?  @db.Text
+
+  createdBy           String   // userId
+  assignedTo          String?  // userId — reviewer
+  approvedBy          String?
+  approvedAt          DateTime?
+  changesRequestedBy  String?
+  changesRequestedAt  DateTime?
+  changesRequestedNote String? @db.Text
+
+  comments            ReviewComment[]
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([caseId, targetType, targetId], name: "ReviewItem_case_target")
+  @@index([caseId, status])
+  @@index([status])
+  @@index([assignedTo])
+}
+
+// Append-only conversation on a review item. No edits, no deletes at
+// the app layer — the review record is part of the audit trail.
+model ReviewComment {
+  id            String   @id @default(cuid())
+  reviewItemId  String
+  reviewItem    ReviewItem @relation(fields: [reviewItemId], references: [id], onDelete: Cascade)
+  authorId      String
+  author        User     @relation(fields: [authorId], references: [id])
+  body          String   @db.Text
+  createdAt     DateTime @default(now())
+
+  @@index([reviewItemId, createdAt])
+}
+
+// ─────────────────────────────────────────────────
+// CLIENT REQUEST LIST & SECURE PORTAL (Slice 12)
+// ─────────────────────────────────────────────────
+// A firm collects "prepared-by-client" (PBC) documents through a
+// RequestList attached to a Case. Each RequestList is composed of
+// RequestItems (individual asks). Items have a lifecycle status
+// (NOT_REQUESTED → REQUESTED → RECEIVED → NEEDS_CLARIFICATION →
+//  RECEIVED → ACCEPTED / NOT_APPLICABLE) and can carry multiple
+// uploaded documents.
+//
+// Clients access their assigned RequestList via an opaque URL token.
+// The raw token exists only in the emailed link; only its SHA-256 hash
+// is stored in `PortalAccess`. A portal caller NEVER gets a firm
+// session — they see only their own list, and only the RequestItem
+// rows scoped to it.
+//
+// See docs/architecture/CLIENT_PORTAL_REQUESTS.md for the security
+// model and the "no cross-scope" invariant.
+model RequestList {
+  id            String   @id @default(cuid())
+  caseId        String
+  case          Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?  @db.Text
+  // DRAFT while the firm is still assembling the list. SENT once at
+  // least one PortalAccess has been issued. CLOSED when the analyst
+  // marks the collection complete.
+  status        String   @default("DRAFT")   // DRAFT | SENT | CLOSED
+  createdBy     String   // firm userId
+  templateId    String?  // origin template, for provenance
+  template      RequestTemplate? @relation(fields: [templateId], references: [id])
+  sentAt        DateTime?
+  closedAt      DateTime?
+  items         RequestItem[]
+  portalAccesses PortalAccess[]
+  reminderEvents ReminderEvent[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([caseId, status])
+  @@index([templateId])
+}
+
+model RequestItem {
+  id                 String   @id @default(cuid())
+  requestListId      String
+  requestList        RequestList @relation(fields: [requestListId], references: [id], onDelete: Cascade)
+  // Denormalized for tenant-scoping queries + dashboards.
+  caseId             String
+  case               Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  title              String
+  description        String?  @db.Text
+  category           String?  // FINANCIAL | TAX | BANK | LEGAL | OPERATIONS | GOVERNANCE | HR | OTHER
+  requestedFrom      String?  // free-form: "Client", "CFO", "Owner Compensation Committee", etc.
+  dueDate            DateTime?
+  priority           String   @default("NORMAL")   // LOW | NORMAL | HIGH
+  status             String   @default("NOT_REQUESTED")
+  //   NOT_REQUESTED       — analyst hasn't sent this to the client
+  //   REQUESTED           — SENT and awaiting client action
+  //   RECEIVED            — client uploaded at least one document
+  //   NEEDS_CLARIFICATION — reviewer flagged that upload as insufficient
+  //   ACCEPTED            — reviewer signed off
+  //   NOT_APPLICABLE      — reviewer determined this item doesn't apply
+  assignedToUserId   String?  // firm professional assigned to review
+  reviewerUserId     String?  // firm reviewer (may equal assignedTo)
+  notes              String?  @db.Text          // firm-internal notes; NEVER shown to portal
+  clarificationNote  String?  @db.Text          // shown to portal when NEEDS_CLARIFICATION
+  // ── AI-assisted completeness detection ────────────────────────────
+  // Populated by runCompletenessCheck; NEVER auto-transitions the
+  // status to ACCEPTED. Only a suggestion visible to the reviewer.
+  //   AUTO_COMPLETE       — AI believes upload satisfies the request
+  //   NEEDS_HUMAN         — AI is not confident; human must judge
+  //   INSUFFICIENT        — AI believes upload does not satisfy the request
+  aiCompleteness     String?
+  // Anti-hallucination flag (Slice 7 pattern). When false, aiCompleteness
+  // must be surfaced as a suggestion the human explicitly reviews.
+  aiCompletenessConfident Boolean @default(true)
+  aiCompletenessNote String? @db.Text
+  aiExecutionId      String?
+  aiExecution        AiExecution? @relation(fields: [aiExecutionId], references: [id])
+  documents          RequestItemDocument[]
+  reminders          ReminderEvent[]
+  statusChangedAt    DateTime?
+  displayOrder       Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([requestListId, status])
+  @@index([caseId, status])
+  @@index([status])
+  @@index([aiExecutionId])
+}
+
+// Join between RequestItem and Document. A single document can satisfy
+// multiple items in principle (e.g. a comprehensive tax return covers
+// several asks) so the join is many-to-many; the unique guards duplicate
+// links.
+model RequestItemDocument {
+  id               String   @id @default(cuid())
+  requestItemId    String
+  requestItem      RequestItem @relation(fields: [requestItemId], references: [id], onDelete: Cascade)
+  documentId       String
+  document         Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  // True when the upload originated on the client portal (not a firm
+  // user manually attaching a doc). Preserves origin for the audit
+  // trail even after the PortalAccess is revoked.
+  uploadedByPortal Boolean  @default(false)
+  uploadedByContactId String?  // ClientContact.id (nullable when firm-side)
+  uploadedAt       DateTime @default(now())
+
+  @@unique([requestItemId, documentId])
+  @@index([documentId])
+}
+
+// A person on the client's side. Distinct from `User` — a ClientContact
+// never has a firm password, JWT session, or org role.
+model ClientContact {
+  id            String   @id @default(cuid())
+  caseId        String
+  case          Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  name          String
+  email         String   // normalized lowercase at write time
+  role          String?  // free-form: "Owner", "CFO", "Bookkeeper", ...
+  createdBy     String   // firm userId
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  portalAccesses PortalAccess[]
+  reminderEvents ReminderEvent[]
+
+  @@index([caseId])
+  @@index([caseId, email])
+}
+
+// A per-invitation opaque token that grants a single ClientContact
+// scoped access to a single RequestList. The primary key is the SHA-256
+// hex hash of the raw token; the raw token exists only in the emailed
+// URL. Portal server actions look up the row by hashing the incoming
+// token — a DB dump therefore never leaks a usable portal link.
+model PortalAccess {
+  tokenHash        String   @id
+  clientContactId  String
+  clientContact    ClientContact @relation(fields: [clientContactId], references: [id], onDelete: Cascade)
+  requestListId    String
+  requestList      RequestList @relation(fields: [requestListId], references: [id], onDelete: Cascade)
+  // Denormalized for tenant-scoping queries + audit-log ergonomics.
+  caseId           String
+  case             Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  invitedBy        String   // firm userId who issued the invite
+  invitedAt        DateTime @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  revokedBy        String?
+  lastUsedAt       DateTime?
+  usageCount       Int      @default(0)
+  lastUsedIp       String?
+
+  @@index([requestListId])
+  @@index([clientContactId])
+  @@index([caseId])
+  @@index([expiresAt])
+}
+
+// Log of every reminder / notification touching a request. Both a
+// rate-limit source (queries by `sentAt`) and an audit signal.
+model ReminderEvent {
+  id             String   @id @default(cuid())
+  caseId         String
+  case           Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  requestListId  String?
+  requestList    RequestList? @relation(fields: [requestListId], references: [id], onDelete: Cascade)
+  requestItemId  String?
+  requestItem    RequestItem? @relation(fields: [requestItemId], references: [id], onDelete: Cascade)
+  clientContactId String?
+  clientContact   ClientContact? @relation(fields: [clientContactId], references: [id])
+  //   INVITE          — first portal link email
+  //   REMINDER        — subsequent nudge
+  //   CLARIFICATION   — reviewer requested clarification
+  //   RECEIVED_ACK    — firm confirmed receipt / acceptance
+  kind           String
+  channel        String   @default("EMAIL")   // EMAIL | INAPP
+  toEmail        String?
+  sentBy         String?  // firm userId; NULL for system / scheduled
+  sentAt         DateTime @default(now())
+  status         String   @default("SENT")    // SENT | FAILED | SUPPRESSED
+  errorMessage   String?  @db.Text
+
+  @@index([caseId, sentAt])
+  @@index([requestListId, sentAt])
+  @@index([requestItemId, sentAt])
+  @@index([clientContactId, sentAt])
+}
+
+// Firm-editable template of a request list. Seeded system templates
+// (`isSystem = true`) cannot be deleted but may be cloned. Firms can
+// author their own templates for their common engagement types.
+model RequestTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?  @db.Text
+  engagementType String?  // BUSINESS_VALUATION | DIVORCE | LITIGATION | ESTATE | OTHER
+  isSystem       Boolean  @default(false)
+  createdBy      String?
+  items          RequestTemplateItem[]
+  requestLists   RequestList[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([organizationId, engagementType])
+}
+
+model RequestTemplateItem {
+  id             String   @id @default(cuid())
+  templateId     String
+  template       RequestTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  title          String
+  description    String?  @db.Text
+  category       String?
+  priority       String   @default("NORMAL")
+  displayOrder   Int      @default(0)
+
+  @@index([templateId])
+}
+
+// ─────────────────────────────────────────────────
+// PROFESSIONAL VALUATION ENGINE V2 (Slice 13)
+// ─────────────────────────────────────────────────
+// A structured multi-approach valuation workbench. Distinct from the
+// Slice-0 `ValuationModel` (which stays for backward compatibility on
+// existing cases). A `ValuationEngagement` is 1:1 with a Case and
+// composes scenarios → approaches → per-approach detail rows.
+//
+// Every material assumption (a WACC input, a multiple, a growth rate,
+// an ownership discount) is a first-class `ValuationAssumption` row
+// carrying value + source + rationale + status + reviewer + history.
+// The math library only ever consumes APPROVED assumptions (or, if the
+// caller opts in, DRAFT for a preview); production reconciliations
+// refuse to compute unless every material assumption is APPROVED.
+//
+// Ownership discounts (DLOC / DLOM) NEVER auto-apply. They live as
+// `OwnershipAdjustment` rows and require `status = APPROVED` before
+// the reconciliation math includes them.
+//
+// See docs/architecture/VALUATION_ENGINE_V2.md for the full data model.
+
+model ValuationEngagement {
+  id             String   @id @default(cuid())
+  caseId         String   @unique
+  case           Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  // Human-editable summary — the valuation date and standard of value
+  // live on Case; this row carries workbench-level configuration.
+  valuationDate  DateTime?
+  standardOfValue String?  // FMV | FV | IV | BEV — mirrors Case, editable in workbench
+  premiseOfValue  String?  // GOING_CONCERN | LIQUIDATION | ORDERLY_LIQUIDATION | FORCED
+  interestType    String?  // CONTROLLING | MINORITY
+  marketability   String?  // MARKETABLE | NON_MARKETABLE
+  reportingCurrency String @default("USD")
+  status         String   @default("DRAFT")   // DRAFT | UNDER_REVIEW | FINAL
+  createdBy      String
+  finalizedBy    String?
+  finalizedAt    DateTime?
+  scenarios      ValuationScenario[]
+  assumptions    ValuationAssumption[]
+  ownershipAdjustments OwnershipAdjustment[]
+  reconciliations ValuationReconciliation[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([caseId])
+}
+
+// A scenario is a distinct set of approaches + reconciliation for the
+// same engagement. BASE / LOW / HIGH are seeded on creation; the firm
+// may add custom scenarios (e.g. "Recession Downside").
+model ValuationScenario {
+  id             String   @id @default(cuid())
+  engagementId   String
+  engagement     ValuationEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  key            String   // 'BASE' | 'LOW' | 'HIGH' | free-form key
+  name           String   // human-visible label
+  probability    Decimal? @db.Decimal(9, 6)  // 0..1 — optional probability weight; NOT used to auto-blend
+  displayOrder   Int      @default(0)
+  approaches     ValuationApproach[]
+  reconciliation ValuationReconciliation?
+  bridgeItems    EquityBridgeItem[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([engagementId, key], name: "ValuationScenario_engagement_key")
+  @@index([engagementId])
+}
+
+// One row per approach kind per scenario. Only ONE row per (scenario,
+// kind) — a scenario has at most one DCF, one Cap-of-Earnings, etc.
+// Multiple guideline companies / transactions live in child tables.
+//
+// The `indicatedValue` column is populated by the math library at
+// compute time and pinned to the row so the reconciliation reads
+// deterministic inputs. Recomputing an approach rewrites this column.
+model ValuationApproach {
+  id             String   @id @default(cuid())
+  scenarioId     String
+  scenario       ValuationScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  kind           String   // INCOME_CAP_EARNINGS | INCOME_DCF | MARKET_GPCM | MARKET_TRANSACTIONS | ASSET
+  label          String?  // optional human override; defaults to the kind label
+  weight         Decimal  @db.Decimal(9, 6) @default(0)     // reconciliation weight (0..1 or any positive scale)
+  isIncluded     Boolean  @default(true)                    // exclude without deleting
+  indicatedValue Decimal? @db.Decimal(19, 4)                // last computed enterprise-value output
+  computedAt     DateTime?
+  computationNote String? @db.Text                          // e.g. "requires approved WACC assumption"
+  capEarnings    CapEarningsDetail?
+  dcf            DcfDetail?
+  guidelineCompanies GuidelinePublicCompany[]
+  guidelineTransactions GuidelineTransaction[]
+  assetAdjustments AssetAdjustment[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([scenarioId, kind], name: "ValuationApproach_scenario_kind")
+  @@index([scenarioId])
+  @@index([kind])
+}
+
+// ─── Income: Capitalization of Earnings ───────────────────────────
+model CapEarningsDetail {
+  approachId          String @id
+  approach            ValuationApproach @relation(fields: [approachId], references: [id], onDelete: Cascade)
+  normalizedEarnings  Decimal? @db.Decimal(19, 4)
+  capitalizationRate  Decimal? @db.Decimal(9,  6)   // (discount rate - growth) as a decimal fraction
+  discountRate        Decimal? @db.Decimal(9,  6)
+  growthRate          Decimal? @db.Decimal(9,  6)
+  updatedAt           DateTime @updatedAt
+}
+
+// ─── Income: DCF ──────────────────────────────────────────────────
+model DcfDetail {
+  approachId          String @id
+  approach            ValuationApproach @relation(fields: [approachId], references: [id], onDelete: Cascade)
+  discountRate        Decimal? @db.Decimal(9,  6)
+  terminalGrowth      Decimal? @db.Decimal(9,  6)
+  terminalMethod      String   @default("GORDON") // GORDON | EXIT_MULTIPLE
+  terminalExitMultiple Decimal? @db.Decimal(9, 6)
+  taxRate             Decimal? @db.Decimal(9,  6)
+  midyearConvention   Boolean  @default(false)
+  pvSum               Decimal? @db.Decimal(19, 4)  // sum of per-year present values
+  pvTerminal          Decimal? @db.Decimal(19, 4)
+  indicatedValue      Decimal? @db.Decimal(19, 4)
+  forecastYears       DcfForecastYear[]
+  updatedAt           DateTime @updatedAt
+}
+
+model DcfForecastYear {
+  id              String @id @default(cuid())
+  dcfApproachId   String
+  dcfDetail       DcfDetail @relation(fields: [dcfApproachId], references: [approachId], onDelete: Cascade)
+  yearLabel       String                                  // 'Y1' | '2025' | ...
+  yearIndex       Int                                     // 1..N
+  revenue         Decimal? @db.Decimal(19, 4)
+  grossMarginPct  Decimal? @db.Decimal(9,  6)
+  ebitdaMargin    Decimal? @db.Decimal(9,  6)
+  ebitda          Decimal? @db.Decimal(19, 4)
+  depreciation    Decimal? @db.Decimal(19, 4)
+  amortization    Decimal? @db.Decimal(19, 4)
+  ebit            Decimal? @db.Decimal(19, 4)
+  taxes           Decimal? @db.Decimal(19, 4)
+  capex           Decimal? @db.Decimal(19, 4)
+  workingCapitalChange Decimal? @db.Decimal(19, 4)
+  fcff            Decimal? @db.Decimal(19, 4)             // free cash flow to firm
+  discountFactor  Decimal? @db.Decimal(9,  6)
+  presentValue    Decimal? @db.Decimal(19, 4)
+
+  @@unique([dcfApproachId, yearIndex], name: "DcfForecastYear_dcf_year")
+  @@index([dcfApproachId])
+}
+
+// ─── Market: Guideline Public Companies (GPCM) ────────────────────
+model GuidelinePublicCompany {
+  id           String @id @default(cuid())
+  approachId   String
+  approach     ValuationApproach @relation(fields: [approachId], references: [id], onDelete: Cascade)
+  companyName  String
+  ticker       String?
+  // Subject-company metrics used with the multiple to derive value.
+  // Kept per-row so a company with a stale metric can be excluded
+  // without touching the others.
+  revenue      Decimal? @db.Decimal(19, 4)
+  ebitda       Decimal? @db.Decimal(19, 4)
+  netIncome    Decimal? @db.Decimal(19, 4)
+  enterpriseValue Decimal? @db.Decimal(19, 4)
+  marketCap    Decimal? @db.Decimal(19, 4)
+  evRevenue    Decimal? @db.Decimal(9, 6)
+  evEbitda     Decimal? @db.Decimal(9, 6)
+  peRatio      Decimal? @db.Decimal(9, 6)
+  isIncluded   Boolean  @default(true)
+  weight       Decimal  @db.Decimal(9, 6) @default(1)
+  createdAt    DateTime @default(now())
+
+  @@index([approachId])
+}
+
+// ─── Market: Guideline Transactions ───────────────────────────────
+model GuidelineTransaction {
+  id           String @id @default(cuid())
+  approachId   String
+  approach     ValuationApproach @relation(fields: [approachId], references: [id], onDelete: Cascade)
+  target       String
+  acquirer     String?
+  transactionDate DateTime?
+  price        Decimal? @db.Decimal(19, 4)
+  revenue      Decimal? @db.Decimal(19, 4)
+  ebitda       Decimal? @db.Decimal(19, 4)
+  evRevenue    Decimal? @db.Decimal(9, 6)
+  evEbitda     Decimal? @db.Decimal(9, 6)
+  notes        String?  @db.Text
+  isIncluded   Boolean  @default(true)
+  weight       Decimal  @db.Decimal(9, 6) @default(1)
+  createdAt    DateTime @default(now())
+
+  @@index([approachId])
+}
+
+// ─── Asset Approach ───────────────────────────────────────────────
+model AssetAdjustment {
+  id             String @id @default(cuid())
+  approachId     String
+  approach       ValuationApproach @relation(fields: [approachId], references: [id], onDelete: Cascade)
+  side           String   // ASSET | LIABILITY
+  lineItem       String
+  reportedValue  Decimal  @db.Decimal(19, 4)
+  adjustment     Decimal  @db.Decimal(19, 4)  // signed — positive means write-up
+  fairValue      Decimal  @db.Decimal(19, 4)  // reportedValue + adjustment; recomputed on write
+  rationale      String?  @db.Text
+  displayOrder   Int      @default(0)
+
+  @@index([approachId, side])
+}
+
+// ─── Enterprise → Equity Bridge ───────────────────────────────────
+// A per-scenario ordered list of adjustments applied to the reconciled
+// Enterprise Value to arrive at Equity Value. Standard categories:
+//   CASH               (+)   add non-operating cash
+//   DEBT               (−)   subtract interest-bearing debt
+//   DEBT_LIKE          (−)   e.g. lease liabilities, unfunded pension
+//   NON_OPERATING      (±)   non-operating assets/liabilities
+//   PREFERRED_EQUITY   (−)
+//   NCI                (−)
+//   OTHER              (±)   custom
+model EquityBridgeItem {
+  id             String @id @default(cuid())
+  scenarioId     String
+  scenario       ValuationScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  category       String
+  label          String
+  amount         Decimal  @db.Decimal(19, 4)  // signed with respect to enterprise value
+  displayOrder   Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  @@index([scenarioId])
+}
+
+// ─── Ownership Adjustments (DLOC / DLOM / others) ─────────────────
+// Never auto-applied. Each row carries its own status; only APPROVED
+// rows are picked up by the reconciliation math. Multiple rows with
+// the same `kind` are allowed but only one may be APPROVED at a time
+// (enforced by application logic + the compound partial index below).
+model OwnershipAdjustment {
+  id             String @id @default(cuid())
+  engagementId   String
+  engagement     ValuationEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  kind           String   // DLOC | DLOM | KEY_PERSON | OTHER
+  label          String?
+  percent        Decimal  @db.Decimal(9, 6)  // 0..1 fractional discount (0.30 = 30 % discount)
+  ownershipPercent Decimal? @db.Decimal(9, 6) // 0..1 subject interest — informational for DLOC decisions
+  source         String?  @db.Text            // e.g. 'Mandelbaum factors', 'Restricted Stock Studies'
+  rationale      String?  @db.Text            // required before APPROVED
+  status         String   @default("DRAFT")   // DRAFT | PROPOSED | APPROVED | REJECTED | SUPERSEDED
+  proposedBy     String?
+  approvedBy     String?
+  approvedAt     DateTime?
+  rejectedBy     String?
+  rejectedAt     DateTime?
+  rejectionNote  String?  @db.Text
+  supersededBy   String?  // id of a newer row that replaced this
+  displayOrder   Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([engagementId, kind, status])
+  @@index([engagementId])
+}
+
+// ─── Material Assumptions ─────────────────────────────────────────
+// Polymorphic — an assumption can attach to the engagement itself, a
+// scenario, or a specific approach. `targetType` / `targetId` capture
+// the anchor; parity of `parent` fields keeps the FK queries fast.
+//
+// Every material assumption a report cites must be represented here
+// and be APPROVED before final reconciliation.
+model ValuationAssumption {
+  id             String @id @default(cuid())
+  engagementId   String
+  engagement     ValuationEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  targetType     String   // ENGAGEMENT | SCENARIO | APPROACH | DCF_YEAR | GPCM_ROW | TRANSACTION_ROW | ASSET_ROW | BRIDGE_ITEM | OWNERSHIP
+  targetId       String?
+  key            String   // stable machine key, e.g. 'wacc.riskFreeRate' | 'gpcm.evEbitda.median'
+  label          String
+  category       String?  // DISCOUNT_RATE | GROWTH | MULTIPLE | MARGIN | CAPEX | WORKING_CAPITAL | OTHER
+  valueString    String?  // canonical string form (Decimal.toString) — accepts non-money too
+  valueNumeric   Decimal? @db.Decimal(19, 6)  // parallel numeric view for filtering/aggregation
+  unit           String?  // 'RATE' | 'MONEY' | 'PERCENT' | 'MULTIPLE' | 'YEARS' | ...
+  source         String?  @db.Text            // where this came from — evidence citation, professional judgment, etc.
+  rationale      String?  @db.Text            // why this specific value
+  status         String   @default("DRAFT")   // DRAFT | PROPOSED | APPROVED | REJECTED | SUPERSEDED
+  proposedBy     String?
+  approvedBy     String?
+  approvedAt     DateTime?
+  rejectedBy     String?
+  rejectedAt     DateTime?
+  rejectionNote  String?  @db.Text
+  supersededBy   String?
+  events         AssumptionEvent[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([engagementId, status])
+  @@index([engagementId, key])
+  @@index([targetType, targetId])
+}
+
+// Append-only history for an assumption. Every material change (value,
+// status, reviewer decision) writes a row here. The most recent row's
+// `status` matches the parent row.
+model AssumptionEvent {
+  id             String @id @default(cuid())
+  assumptionId   String
+  assumption     ValuationAssumption @relation(fields: [assumptionId], references: [id], onDelete: Cascade)
+  action         String   // CREATE | UPDATE_VALUE | PROPOSE | APPROVE | REJECT | SUPERSEDE | REOPEN
+  userId         String?  // firm userId; NULL for system-triggered
+  oldValue       String?  @db.Text
+  newValue       String?  @db.Text
+  note           String?  @db.Text
+  createdAt      DateTime @default(now())
+
+  @@index([assumptionId, createdAt])
+}
+
+// ─── Reconciliation ───────────────────────────────────────────────
+// One row per scenario. Captures the weighted enterprise value, the
+// applied bridge, ownership discounts, and the final equity value.
+// The row is a snapshot — running `runReconciliation` overwrites it.
+model ValuationReconciliation {
+  id                     String @id @default(cuid())
+  engagementId           String
+  engagement             ValuationEngagement @relation(fields: [engagementId], references: [id], onDelete: Cascade)
+  scenarioId             String @unique
+  scenario               ValuationScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  enterpriseValue        Decimal? @db.Decimal(19, 4)  // weighted across approaches
+  bridgeNet              Decimal? @db.Decimal(19, 4)  // sum of EquityBridgeItem.amount
+  equityValue            Decimal? @db.Decimal(19, 4)  // enterprise + bridgeNet
+  ownershipDiscountApplied Decimal? @db.Decimal(9, 6) // cumulative fractional discount from APPROVED rows
+  ownershipValue         Decimal? @db.Decimal(19, 4)  // equityValue * (1 - discountApplied)
+  hasBlockingAssumptions Boolean  @default(false)     // true when any assumption is not APPROVED
+  computedAt             DateTime?
+  computedBy             String?
+  notes                  String?  @db.Text
+
+  @@index([engagementId])
+}
+
+// ─────────────────────────────────────────────────
+// EVIDENCE-GROUNDED REPORT COMPOSER (Slice 14)
+// ─────────────────────────────────────────────────
+// A Report is 1:1 with a Case. It composes a set of ReportSections
+// (per section key) whose bodies are drafted by the AI narrative flow
+// against a payload of APPROVED-only facts. Every section edit lands
+// as an immutable ReportSectionVersion so the chain of custody
+// remains intact even as the report is revised.
+//
+// ReportVersion is a labeled snapshot — pins a specific section
+// version per key at a point in time, plus the frozen facts payload
+// (its SHA-256 hash) that drove those drafts.
+//
+// See docs/architecture/REPORT_COMPOSER.md for the grounding rules
+// and the human-approval workflow.
+
+model Report {
+  id                String   @id @default(cuid())
+  caseId            String   @unique
+  case              Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  title             String
+  //   DRAFT        — sections still being edited/drafted
+  //   UNDER_REVIEW — at least one section is READY_FOR_REVIEW
+  //   FINAL        — every required section is APPROVED and a version was frozen
+  status            String   @default("DRAFT")
+  createdBy         String
+  finalizedBy       String?
+  finalizedAt       DateTime?
+  templateKey       String?  // seed template key that produced the section set
+  standardsFamily   String?  // AICPA | ASA | NACVA | MULTI — configurable, non-certifying
+  currentVersionId  String?
+  currentVersion    ReportVersion? @relation("CurrentReportVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+  sections          ReportSection[]
+  versions          ReportVersion[] @relation("AllReportVersions")
+  checklistItems    ReportChecklistItem[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([caseId])
+}
+
+// A named snapshot of the report at a point in time. `factsHash` pins
+// the exact ReportFacts payload that fed the drafts contained within
+// (see src/lib/reports/facts.ts). If the underlying case data changes
+// after this snapshot is made, the change does not retroactively edit
+// the snapshot — Slice-5-style immutability.
+model ReportVersion {
+  id             String   @id @default(cuid())
+  reportId       String
+  report         Report   @relation("AllReportVersions", fields: [reportId], references: [id], onDelete: Cascade)
+  versionNumber  Int      // 1, 2, 3… per report
+  label          String?  // human label — e.g. "First draft", "Attorney review"
+  factsHash      String   @db.VarChar(64)  // sha256 of the frozen payload
+  factsSnapshot  Json     // the actual payload, frozen at snapshot time
+  compiledBody   String?  @db.LongText   // optional pre-rendered body (concatenated sections)
+  createdBy      String
+  frozenAt       DateTime @default(now())
+  sectionVersions ReportSectionVersion[] @relation("VersionSections")
+  currentFor     Report[] @relation("CurrentReportVersion")
+
+  @@unique([reportId, versionNumber])
+  @@index([reportId, frozenAt])
+}
+
+// One row per section key on a report. Carries the current status +
+// current APPROVED body for fast reads; the full edit history lives in
+// ReportSectionVersion.
+model ReportSection {
+  id             String   @id @default(cuid())
+  reportId       String
+  report         Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  //   ENGAGEMENT_ID | SUBJECT_COMPANY | PURPOSE | INTENDED_USE |
+  //   VALUATION_DATE | STANDARD_OF_VALUE | PREMISE_OF_VALUE |
+  //   COMPANY_HISTORY | OWNERSHIP | PRODUCTS_SERVICES | CUSTOMERS |
+  //   MANAGEMENT | COMPETITION | ECONOMIC_OVERVIEW | INDUSTRY_ANALYSIS |
+  //   FINANCIAL_ANALYSIS | NORMALIZATION | VALUATION_APPROACHES |
+  //   RECONCILIATION | CONCLUSION | ASSUMPTIONS | LIMITING_CONDITIONS |
+  //   SOURCE_LIST
+  key            String
+  title          String
+  displayOrder   Int      @default(0)
+  isRequired     Boolean  @default(true)
+  //   NOT_STARTED | AI_DRAFTED | HUMAN_EDITING | READY_FOR_REVIEW | APPROVED
+  status         String   @default("NOT_STARTED")
+  currentBody    String?  @db.LongText
+  currentFactsHash String? @db.VarChar(64)  // facts hash used for the current body
+  updatedAt      DateTime @updatedAt
+  versions       ReportSectionVersion[]
+
+  @@unique([reportId, key], name: "ReportSection_report_key")
+  @@index([reportId, status])
+}
+
+// Immutable per-edit history for a section. Every AI draft, human
+// edit, or approval writes a new row. `factsHash` records the payload
+// hash the draft was written against — if the current facts hash
+// differs, the version is "stale" (see isStaleFor helper).
+model ReportSectionVersion {
+  id                String   @id @default(cuid())
+  sectionId         String
+  section           ReportSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  reportVersionId   String?
+  reportVersion     ReportVersion? @relation("VersionSections", fields: [reportVersionId], references: [id], onDelete: SetNull)
+  //   AI_DRAFTED | HUMAN_EDITING | READY_FOR_REVIEW | APPROVED
+  status            String
+  body              String   @db.LongText
+  //   AI executions get linked here so an approved section always
+  //   traces back to a specific model run.
+  aiExecutionId     String?
+  aiExecution       AiExecution? @relation(fields: [aiExecutionId], references: [id], onDelete: SetNull)
+  // Structured "missing information" list the AI (or human) flagged.
+  // Present so the reviewer sees what the section could not source.
+  missingInformation Json?
+  // Anti-hallucination flag echoing Slice 7. False when the AI could
+  // not confidently ground the whole section.
+  isConfident       Boolean  @default(true)
+  factsHash         String?  @db.VarChar(64)
+  authorUserId      String
+  approvedBy        String?
+  approvedAt        DateTime?
+  createdAt         DateTime @default(now())
+  citations         ReportCitation[]
+
+  @@index([sectionId, createdAt])
+  @@index([aiExecutionId])
+}
+
+// A citation binds a specific chunk of a section to a specific piece
+// of APPROVED case evidence. Enforced at the app layer: the target
+// must be an approved (or hash-locked-immutable) row. The AI is
+// instructed NOT to fabricate citations — only cite ids we handed it.
+model ReportCitation {
+  id                String   @id @default(cuid())
+  sectionVersionId  String
+  sectionVersion    ReportSectionVersion @relation(fields: [sectionVersionId], references: [id], onDelete: Cascade)
+  //   FINANCIAL_VALUE | ADDBACK | VALUATION_ASSUMPTION |
+  //   OWNERSHIP_ADJUSTMENT | RECONCILIATION | DOCUMENT_VERSION |
+  //   EVIDENCE_CITATION | REQUEST_ITEM | TIE_OUT
+  targetType        String
+  targetId          String
+  snippet           String?  @db.Text
+  // Same anti-hallucination flag as Slice 7 — false when the source
+  // was not confidently found. The reviewer sees the "unconfident"
+  // tag and can accept or reject.
+  isConfident       Boolean  @default(true)
+  createdAt         DateTime @default(now())
+
+  @@index([sectionVersionId])
+  @@index([targetType, targetId])
+}
+
+// ─── Configurable standards-oriented checklists ───────────────────
+// These are professional aids, NOT compliance certifications. The
+// app does not represent that using a checklist certifies AICPA,
+// ASA, NACVA (or any other) compliance.
+model StandardsChecklist {
+  id              String   @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  standardsFamily String   // AICPA | ASA | NACVA | CUSTOM
+  name            String
+  description     String?  @db.Text
+  // Rendered on the UI over the checklist so it is always clear that
+  // this is an aid, not a certification.
+  disclaimer      String?  @db.Text
+  isSystem        Boolean  @default(false)   // seeded template; firm may clone but not edit
+  createdBy       String?
+  items           StandardsChecklistItem[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([organizationId, standardsFamily])
+}
+
+model StandardsChecklistItem {
+  id              String @id @default(cuid())
+  checklistId     String
+  checklist       StandardsChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  key             String   // stable machine key (e.g. 'aicpa.ssvs.100')
+  title           String
+  guidance        String? @db.Text
+  displayOrder    Int      @default(0)
+
+  @@index([checklistId])
+}
+
+// Per-report checklist state. When a firm attaches a
+// StandardsChecklist to a report, its items are copied here so the
+// checklist can evolve without retroactively editing open reports.
+model ReportChecklistItem {
+  id              String   @id @default(cuid())
+  reportId        String
+  report          Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  standardsFamily String
+  key             String
+  title           String
+  guidance        String?  @db.Text
+  //   PENDING     — reviewer has not yet judged
+  //   ADDRESSED   — reviewer confirms the item is satisfied
+  //   NOT_APPLIC  — reviewer marked N/A
+  //   AT_RISK     — reviewer flagged as unresolved
+  status          String   @default("PENDING")
+  note            String?  @db.Text
+  addressedBy     String?
+  addressedAt     DateTime?
+  displayOrder    Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([reportId, status])
+  @@index([reportId, standardsFamily])
+}
+
+// ─────────────────────────────────────────────────
+// ACCOUNTING CONNECTORS + SPREADSHEET INGESTION (Slice 15)
+// ─────────────────────────────────────────────────
+// The Slice-3 `ExternalConnector` model is retained for firm-level
+// storage integrations (Microsoft OneDrive, etc.). Slice 15 introduces
+// a *per-case* `AccountingConnector` for QuickBooks Online, Xero,
+// Sage, NetSuite. One case may have multiple connectors of different
+// providers, or (rarely) multiple companies of the same provider.
+//
+// Tokens are envelope-encrypted using the Slice-3 crypto module — the
+// same `encryptedSecrets` shape is reused verbatim.
+//
+// Every ingested row lands in `AccountingSourceRow`, tagged with its
+// `provider` and `ingestionRunId`. Rows are NEVER promoted into the
+// case's `FinancialValue` set implicitly; a distinct action must
+// stamp `FinancialValue.origin` + `sourceRowId` so the origin remains
+// visible in the UI.
+//
+// Excel imports flow through the same `AccountingSourceRow` +
+// `AccountingIngestionRun` pattern using `provider = 'EXCEL'`, with
+// an additional `ExcelImportRun` capturing the workbook file hash,
+// template version, and the human-approved diff summary.
+
+model AccountingConnector {
+  id                    String   @id @default(cuid())
+  organizationId        String
+  organization          Organization @relation(fields: [organizationId], references: [id])
+  caseId                String
+  case                  Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  //   QUICKBOOKS | XERO | SAGE | NETSUITE
+  provider              String
+  // Provider-side "company" identifier — QBO realmId, Xero tenantId,
+  // Sage business id, NetSuite account id. The label is a human-
+  // readable name (kept for the UI even after tokens expire).
+  providerAccountId     String
+  providerAccountLabel  String?
+  // Slice-3 envelope encryption. Same JSON shape used for
+  // ExternalConnector.encryptedSecrets. `encryptionKeyVersion` lets a
+  // rotation query find rows keyed to an old KMS ARN.
+  encryptedSecrets      Json?
+  encryptionKeyVersion  String?
+  expiresAt             DateTime?          // access token expiry
+  status                String   @default("CONNECTED")
+  connectedBy           String
+  connectedAt           DateTime @default(now())
+  lastSyncAt            DateTime?
+  ingestionRuns         AccountingIngestionRun[]
+  sourceRows            AccountingSourceRow[]
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([caseId, provider, providerAccountId], name: "AccountingConnector_case_provider_account")
+  @@index([organizationId, provider])
+  @@index([caseId, provider])
+  @@index([encryptionKeyVersion])
+}
+
+// One row per fetch. A "run" is scoped to a single (connector, report
+// kind) pair. All rows ingested by that run share the run id so a
+// bad ingest can be rolled back / re-labelled without touching earlier
+// data.
+model AccountingIngestionRun {
+  id             String   @id @default(cuid())
+  caseId         String
+  case           Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  connectorId    String?
+  connector      AccountingConnector? @relation(fields: [connectorId], references: [id], onDelete: SetNull)
+  //   QUICKBOOKS | XERO | SAGE | NETSUITE | EXCEL
+  provider       String
+  //   P_AND_L | BALANCE_SHEET | TRIAL_BALANCE | GENERAL_LEDGER |
+  //   AR_AGING | AP_AGING | EXCEL_IMPORT
+  reportType     String
+  periodLabel    String?  // e.g. '2024-Q4', '2024-01-01_2024-12-31'
+  status         String   @default("RUNNING")   // RUNNING | SUCCESS | FAILURE
+  rowsIngested   Int      @default(0)
+  triggeredBy    String
+  startedAt      DateTime @default(now())
+  completedAt    DateTime?
+  errorCategory  String?  // MODEL_TIMEOUT-style buckets — provider-specific
+  errorMessage   String?  @db.Text
+  // Optional Excel-run linkage (for provider = EXCEL) so the run and
+  // its ExcelImportRun row can be joined.
+  excelImportRunId String?  @unique
+  excelImportRun   ExcelImportRun? @relation(fields: [excelImportRunId], references: [id], onDelete: SetNull)
+  rows           AccountingSourceRow[]
+
+  @@index([caseId, provider])
+  @@index([caseId, reportType])
+  @@index([connectorId])
+}
+
+model AccountingSourceRow {
+  id               String   @id @default(cuid())
+  caseId           String
+  case             Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  connectorId      String?
+  connector        AccountingConnector? @relation(fields: [connectorId], references: [id], onDelete: SetNull)
+  ingestionRunId   String
+  ingestionRun     AccountingIngestionRun @relation(fields: [ingestionRunId], references: [id], onDelete: Cascade)
+  //   QUICKBOOKS | XERO | SAGE | NETSUITE | EXCEL
+  provider         String
+  reportType       String
+  externalRowId    String?  // provider's own row id, if any (idempotency)
+  accountCode      String?  // e.g. account number
+  accountName      String
+  //   ASSET | LIABILITY | EQUITY | REVENUE | EXPENSE | OTHER
+  category         String?
+  period           String   // '2024-Q1' | '2024-12-31' | 'TTM'
+  amountDecimal    Decimal? @db.Decimal(19, 4)
+  currency         String   @default("USD")
+  rawPayload       Json?    // provider's raw row — kept for later re-processing
+  ingestedAt       DateTime @default(now())
+  ingestedBy       String?
+  //   PENDING_PROMOTION | PROMOTED | IGNORED | SUPERSEDED
+  status           String   @default("PENDING_PROMOTION")
+  // Slice-15 links back to the promoted FinancialValue if this row
+  // was folded into the case data. The FK is on FinancialValue.sourceRowId.
+  promotedValues   FinancialValue[]
+
+  @@index([caseId, provider, reportType])
+  @@index([ingestionRunId])
+  @@index([caseId, status])
+  @@index([caseId, provider, externalRowId])
+}
+
+// Records a single Excel import cycle: upload → validate → diff →
+// (optionally) apply. Every step writes to this row so the reviewer
+// can audit what was proposed vs. what was applied.
+model ExcelImportRun {
+  id                  String   @id @default(cuid())
+  caseId              String
+  case                Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  //   FINANCIAL_LEDGER | NORMALIZATION | VALUATION | TIE_OUTS
+  templateKind        String
+  //   'v1', 'v2' — pin the template version so the parser knows the
+  //   column shape.
+  templateVersion     String
+  filename            String
+  fileSha256          String   @db.VarChar(64)
+  detectedCaseId      String?  // read from workbook metadata
+  //   PENDING_REVIEW | APPLIED | REJECTED | FAILED_VALIDATION
+  status              String   @default("PENDING_REVIEW")
+  triggeredBy         String
+  createdAt           DateTime @default(now())
+  reviewedAt          DateTime?
+  reviewedBy          String?
+  appliedAt           DateTime?
+  appliedBy           String?
+  //   { errors: string[], warnings: string[] }
+  validationSummary   Json?
+  //   Structured proposed changes, kept so the reviewer sees exactly
+  //   what would land. Persisted BEFORE any actual write.
+  proposedChanges     Json?
+  //   { updates: n, inserts: n, protected: n }
+  diffSummary         Json?
+  // 1:1 with AccountingIngestionRun so promoted rows show up in the
+  // same source-row surface as connector-based imports.
+  ingestionRun        AccountingIngestionRun?
+
+  @@index([caseId, templateKind])
+  @@index([caseId, status])
+}
+
+// ─────────────────────────────────────────────────
+// INSTITUTIONAL VALUATION INTELLIGENCE (Slice 16)
+// ─────────────────────────────────────────────────
+// A denormalized, permission-aware index over cases so professionals
+// can search their firm's historical body of work by industry,
+// geography, valuation date, methods applied, approved assumptions,
+// approved add-back categories, DLOC/DLOM bands, and report metadata.
+//
+// The index is refreshed by an explicit action after case lifecycle
+// events (assumption approval, engagement finalization, report
+// approval). It aggregates ONLY approved facts — the same data path
+// Slice 14 uses to draft narratives.
+//
+// Every search query composes:
+//   (index.organizationId = session.organizationId)          — Slice 1
+//   AND (case is accessible under the Slice-11 engagement gate)
+//   AND (caller-supplied structured filters)
+//
+// See docs/architecture/CASE_SEARCH.md for the permission model.
+model CaseSearchIndex {
+  caseId                 String   @id
+  case                   Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  organizationId         String   // denormalized for cheap tenant filter
+  // Slice-11 engagement-team flag — denormalized so the search reader
+  // can drop restricted cases without a JOIN. Refreshed alongside the
+  // rest of the index.
+  hasEngagementTeam      Boolean  @default(false)
+
+  // Case metadata
+  caseName               String
+  clientName             String
+  engagementType         String?
+  caseStatus             String?
+
+  // Geography (from Case.subject*)
+  subjectState           String?
+  subjectCity            String?
+  subjectCountry         String?
+
+  // Industry (from Slice-0 IndustryClassification)
+  naicsCode              String?
+  sicCode                String?
+  industryLabel          String?  // human-readable industry description
+
+  // Timing
+  valuationDate          DateTime?
+  reportDueDate          DateTime?
+  reportFinalizedAt      DateTime?
+  reportStatus           String?   // Slice-14 Report.status
+
+  // Approaches applied — JSON string array of Slice-13 ApproachKind
+  //   e.g. ['INCOME_DCF','MARKET_GPCM','ASSET']
+  methodsApplied         Json?
+
+  // Approved add-back categories — { OWNER_COMP: 3, PERSONAL_EXPENSE: 1, ... }
+  approvedAddBackCategories Json?
+  // Whether the case has at least one related-party add-back
+  // (RELATED_PARTY or RENT_ADJUSTMENT categories qualify — set by the
+  // refresh function).
+  hasRelatedPartyAddBack Boolean  @default(false)
+
+  // Approved material assumptions — array of { key, category, value, unit }
+  approvedAssumptions    Json?
+
+  // DLOC/DLOM (approved) — persisted as fractions (0.30 = 30 %). Null
+  // when the case has no APPROVED row of that kind.
+  approvedDlocPercent    Decimal? @db.Decimal(9, 6)
+  approvedDlomPercent    Decimal? @db.Decimal(9, 6)
+
+  // Concluded values (approved reconciliation on any scenario; the
+  // index picks the scenario with the largest weighted equity if
+  // more than one is non-blocking).
+  concludedEnterpriseValue Decimal? @db.Decimal(19, 4)
+  concludedEquityValue     Decimal? @db.Decimal(19, 4)
+  concludedOwnershipValue  Decimal? @db.Decimal(19, 4)
+
+  // Document metadata
+  documentCount          Int      @default(0)
+  documentCategories     Json?    // { financial: n, tax: n, legal: n, ... }
+
+  refreshedAt            DateTime @default(now())
+  refreshedBy            String?  // firm userId or 'system'
+
+  @@index([organizationId, hasEngagementTeam])
+  @@index([organizationId, naicsCode])
+  @@index([organizationId, subjectState])
+  @@index([organizationId, valuationDate])
+  @@index([organizationId, reportStatus])
+  @@index([organizationId, hasRelatedPartyAddBack])
+  @@index([organizationId, approvedDlomPercent])
+  @@index([organizationId, approvedDlocPercent])
+}
+
+// Records every AI-planned search — the natural-language question, the
+// filter DSL the AI proposed, and the caseIds ultimately returned to
+// the user. Uses the Slice-8 AiExecution wrapper for observability.
+//
+// Explicit invariant: the AI PLANNER only proposes filter parameters;
+// it never sees another case's confidential data. Results are always
+// re-filtered by the permission resolver after the plan lands.
+model AiCaseSearchRun {
+  id                String   @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId            String
+  question          String   @db.Text
+  // Structured filter DSL produced by the planner. See
+  // src/lib/search/query-shape.ts for the schema.
+  proposedFilters   Json
+  // Filters actually executed (may differ if the caller edits the plan).
+  executedFilters   Json?
+  // caseIds returned to the user — persisted so a subsequent audit can
+  // verify the leakage-defense invariant.
+  returnedCaseIds   Json?
+  aiExecutionId     String?
+  aiExecution       AiExecution? @relation(fields: [aiExecutionId], references: [id], onDelete: SetNull)
+  isConfident       Boolean  @default(true)
+  fallbackReason    String?  @db.Text
+  createdAt         DateTime @default(now())
+
+  @@index([organizationId, createdAt])
+  @@index([userId])
+  @@index([aiExecutionId])
+}
+
+

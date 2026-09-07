@@ -51,11 +51,22 @@ import Link from "next/link"
 import { useParams } from "next/navigation"
 import { getCaseDetails } from "@/app/actions/cases"
 import { addDocument } from "@/app/actions/documents"
+import { DocumentVersionHistory } from "@/components/document-version-history"
 import { runFinancialExtraction, runIndustryAnalysis, updateFinancialValue, approveFinancialValues, askBinder, runTtmNormalization, acceptFinancialValue, overrideFinancialValue, rejectFinancialValue, toggleLockFinancialValue, runAnomalyDetection, resolveAnomalyFlag, refreshCaseInsights, draftReportSection } from "@/app/actions/ai-actions"
 import { AIThinkingDialog, AI_MESSAGES } from "@/components/ai-thinking-dialog"
 import { ConfidenceBadge } from "@/components/confidence-badge"
+import { CitationIndicator } from "@/components/citation-indicator"
+import { TieOutDashboard } from "@/components/tie-out-dashboard"
+import { NormalizationWorkbench } from "@/components/normalization-workbench"
+import { CaseTeamPanel } from "@/components/case-team-panel"
+import { ReviewQueuePanel } from "@/components/review-queue-panel"
+import { RequestListPanel } from "@/components/request-list-panel"
+import { ValuationWorkbench } from "@/components/valuation-workbench"
+import { ReportComposerPanel } from "@/components/report-composer-panel"
+import { AccountingIntegrationsPanel } from "@/components/accounting-integrations-panel"
 import { OverrideDialog } from "@/components/override-dialog"
 import { AuditLogPanel } from "@/components/audit-log-panel"
+import { AuditIntegrityBadge } from "@/components/audit-integrity-badge"
 import { AddBackSchedule } from "@/components/add-back-schedule"
 import { getExternalConnections } from "@/app/actions/connectors"
 import { toast } from "@/hooks/use-toast"
@@ -697,6 +708,14 @@ export default function ProjectDetail() {
                 <ClipboardList className="mr-2 h-4 w-4" />
                 Add-Backs
               </TabsTrigger>
+              <TabsTrigger value="normalization" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <ClipboardList className="mr-2 h-4 w-4" />
+                Normalization
+              </TabsTrigger>
+              <TabsTrigger value="tieouts" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                Tie-Outs
+              </TabsTrigger>
               <TabsTrigger value="anomalies" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <AlertTriangle className="mr-2 h-4 w-4" />
                 Anomalies
@@ -709,6 +728,26 @@ export default function ProjectDetail() {
               <TabsTrigger value="report" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <BookOpen className="mr-2 h-4 w-4" />
                 Report
+              </TabsTrigger>
+              <TabsTrigger value="requests" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <ClipboardList className="mr-2 h-4 w-4" />
+                Requests
+              </TabsTrigger>
+              <TabsTrigger value="workbench" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <Calculator className="mr-2 h-4 w-4" />
+                Workbench
+              </TabsTrigger>
+              <TabsTrigger value="composer" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <BookOpen className="mr-2 h-4 w-4" />
+                Composer
+              </TabsTrigger>
+              <TabsTrigger value="integrations" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Integrations
+              </TabsTrigger>
+              <TabsTrigger value="team" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
+                <ShieldCheck className="mr-2 h-4 w-4" />
+                Team & Review
               </TabsTrigger>
               <TabsTrigger value="audit" className="data-[state=active]:bg-primary data-[state=active]:text-white px-8 font-bold text-xs uppercase tracking-widest rounded-lg h-full">
                 <ShieldCheck className="mr-2 h-4 w-4" />
@@ -737,15 +776,18 @@ export default function ProjectDetail() {
                                 <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">{doc.size} • {format(new Date(doc.createdAt), 'MMM d, yyyy')}</p>
                               </div>
                             </div>
-                            <Badge 
-                              variant='outline' 
-                              className={cn(
-                                "text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-full",
-                                doc.status === "EXTRACTED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-blue-50 text-blue-700 border-blue-200"
-                              )}
-                            >
-                              {doc.status || "VERIFIED"}
-                            </Badge>
+                            <div className="flex items-center gap-2">
+                              <Badge
+                                variant='outline'
+                                className={cn(
+                                  "text-[10px] uppercase font-bold tracking-widest px-3 py-1 rounded-full",
+                                  doc.status === "EXTRACTED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-blue-50 text-blue-700 border-blue-200"
+                                )}
+                              >
+                                {doc.status || "VERIFIED"}
+                              </Badge>
+                              <DocumentVersionHistory documentId={doc.id} documentName={doc.name} />
+                            </div>
                           </div>
                         ))}
                         {caseData.documents.length === 0 && (
@@ -1235,12 +1277,15 @@ export default function ProjectDetail() {
                                 {v.value.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
                               </TableCell>
                               <TableCell className="text-center">
-                                <ConfidenceBadge
-                                  confidence={v.confidence}
-                                  reviewStatus={v.reviewStatus}
-                                  isLocked={v.isLocked}
-                                  sourceRef={v.sourceRef}
-                                />
+                                <div className="flex flex-col items-center gap-1">
+                                  <ConfidenceBadge
+                                    confidence={v.confidence}
+                                    reviewStatus={v.reviewStatus}
+                                    isLocked={v.isLocked}
+                                    sourceRef={v.sourceRef}
+                                  />
+                                  <CitationIndicator financialValueId={v.id} />
+                                </div>
                               </TableCell>
                               <TableCell className="text-right">
                                 <div className="flex justify-end gap-1">
@@ -1445,6 +1490,102 @@ export default function ProjectDetail() {
               </div>
             </TabsContent>
 
+            {/* ─── NORMALIZATION WORKBENCH (Slice 10) ───────────────── */}
+            <TabsContent value="normalization">
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-black text-primary tracking-tight">Normalization Workbench</h2>
+                  <p className="text-sm text-muted-foreground font-medium">
+                    Reported EBITDA plus reviewed adjustments equals normalized EBITDA. Only APPROVED adjustments modify the bridge; DRAFT / PROPOSED work stays visible for context.
+                  </p>
+                </div>
+                <NormalizationWorkbench caseId={id as string} />
+              </div>
+            </TabsContent>
+
+            {/* ─── TIE-OUTS TAB (Slice 9) ─────────────────────────────── */}
+            <TabsContent value="tieouts">
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-black text-primary tracking-tight">Financial Tie-Outs</h2>
+                  <p className="text-sm text-muted-foreground font-medium">
+                    Reconcile equivalent facts across evidence sources. Discrepancies are surfaced first and never auto-hidden.
+                  </p>
+                </div>
+                <TieOutDashboard caseId={id as string} />
+              </div>
+            </TabsContent>
+
+            {/* ─── TEAM & REVIEW (Slice 11) ────────────────────────────── */}
+            {/* ─── ACCOUNTING INTEGRATIONS (Slice 15) ───────────────────── */}
+            <TabsContent value="integrations">
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-black text-primary tracking-tight">Accounting Integrations</h2>
+                  <p className="text-sm text-muted-foreground font-medium">
+                    Structured Excel exports/imports with template versioning + case identity, and QuickBooks Online (Xero/Sage/NetSuite adapters land in future slices). Ingested values always carry their origin.
+                  </p>
+                </div>
+                <AccountingIntegrationsPanel caseId={id as string} />
+              </div>
+            </TabsContent>
+
+            {/* ─── REPORT COMPOSER (Slice 14) ────────────────────────────── */}
+            <TabsContent value="composer">
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-black text-primary tracking-tight">Report Composer</h2>
+                  <p className="text-sm text-muted-foreground font-medium">
+                    Evidence-grounded report drafts. AI narratives are constrained to APPROVED case data only, cite the exact fact ids the payload contains, and never overwrite a reviewer-approved section.
+                  </p>
+                </div>
+                <ReportComposerPanel caseId={id as string} />
+              </div>
+            </TabsContent>
+
+            {/* ─── VALUATION WORKBENCH (Slice 13) ────────────────────────── */}
+            <TabsContent value="workbench">
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-black text-primary tracking-tight">Professional Valuation Workbench</h2>
+                  <p className="text-sm text-muted-foreground font-medium">
+                    Structured multi-approach valuation with per-scenario reconciliation. All discounts require professional approval — nothing is auto-applied.
+                  </p>
+                </div>
+                <ValuationWorkbench caseId={id as string} />
+              </div>
+            </TabsContent>
+
+            {/* ─── REQUESTS (Slice 12) ───────────────────────────────────── */}
+            <TabsContent value="requests">
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-black text-primary tracking-tight">Client Requests & Portal</h2>
+                  <p className="text-sm text-muted-foreground font-medium">
+                    Track "prepared-by-client" documents through a single professional workflow. Clients never
+                    receive firm access — every upload comes through a per-invitation opaque link.
+                  </p>
+                </div>
+                <RequestListPanel caseId={id as string} />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="team">
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-2xl font-black text-primary tracking-tight">Engagement Team & Review</h2>
+                  <p className="text-sm text-muted-foreground font-medium">
+                    Not every firm member automatically has access to every confidential engagement. Once you list
+                    members here, only those users plus org administrators can reach this case.
+                  </p>
+                </div>
+                <div className="grid gap-6 lg:grid-cols-2">
+                  <CaseTeamPanel caseId={id as string} />
+                  <ReviewQueuePanel caseId={id as string} />
+                </div>
+              </div>
+            </TabsContent>
+
             {/* ─── AUDIT LOG TAB ────────────────────────────────────────── */}
             <TabsContent value="audit">
               <div className="space-y-6">
@@ -1452,6 +1593,7 @@ export default function ProjectDetail() {
                   <h2 className="text-2xl font-black text-primary tracking-tight">Audit Trail</h2>
                   <p className="text-sm text-muted-foreground font-medium">Immutable chain-of-custody log for all case actions.</p>
                 </div>
+                <AuditIntegrityBadge />
                 <Card className="border-none shadow-sm bg-white overflow-hidden">
                   <CardContent className="pt-6">
                     <AuditLogPanel caseId={id as string} />

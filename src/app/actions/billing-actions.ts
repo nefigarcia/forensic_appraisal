@@ -1,10 +1,10 @@
 'use server'
 
 import { prisma } from '@/lib/prisma'
-import { getSession } from '@/lib/auth-utils'
 import { stripe } from '@/lib/stripe'
 import { getPlan, PLANS, PlanId } from '@/lib/plans'
 import { redirect } from 'next/navigation'
+import { requireOrganization } from '@/lib/authz'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:9002'
 
@@ -13,8 +13,8 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:9002'
 // ─────────────────────────────────────────────────
 
 export async function getBillingInfo() {
-  const session = await getSession()
-  if (!session) return null
+  let session
+  try { session = await requireOrganization() } catch { return null }
 
   // @ts-ignore — new billing fields; Prisma client will be current after `prisma generate`
   const org = await prisma.organization.findUnique({
@@ -49,8 +49,7 @@ export async function getBillingInfo() {
 // ─────────────────────────────────────────────────
 
 export async function createCheckoutSession(planId: PlanId) {
-  const session = await getSession()
-  if (!session) throw new Error('Unauthorized')
+  const session = await requireOrganization()
 
   const plan = PLANS[planId]
   if (!plan.stripePriceId) throw new Error(`Plan ${planId} has no Stripe price configured.`)
@@ -85,8 +84,7 @@ export async function createCheckoutSession(planId: PlanId) {
 // ─────────────────────────────────────────────────
 
 export async function createPortalSession() {
-  const session = await getSession()
-  if (!session) throw new Error('Unauthorized')
+  const session = await requireOrganization()
 
   // @ts-ignore
   const org = await prisma.organization.findUnique({ where: { id: session.organizationId } }) as any
@@ -103,6 +101,11 @@ export async function createPortalSession() {
 // ─────────────────────────────────────────────────
 // APPLY PLAN LIMITS AFTER WEBHOOK (internal)
 // ─────────────────────────────────────────────────
+// NOTE(slice-1): This export lives in a 'use server' file, which makes it
+// remotely callable as a server-action RPC. It trusts a client-supplied
+// organizationId. Slice 2 will move it out of this module into a plain
+// server-only helper invoked only from the Stripe webhook route. Not moved
+// in Slice 1 to keep the scope tight (tenant enforcement only).
 
 export async function applyPlanToOrg(organizationId: string, planId: PlanId) {
   const plan = PLANS[planId]

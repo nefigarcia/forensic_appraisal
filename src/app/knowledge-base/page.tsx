@@ -18,6 +18,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { CaseSearchPanel } from "@/components/case-search-panel"
 
 export default function KnowledgeBase() {
   const resources = [
@@ -62,12 +63,9 @@ export default function KnowledgeBase() {
         </header>
         
         <main className="flex-1 p-8 max-w-5xl mx-auto w-full">
-          <div className="relative mb-12">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input 
-              className="pl-12 h-14 text-lg border-none shadow-sm bg-white rounded-2xl" 
-              placeholder="Search standards, codes, or litigation guides..." 
-            />
+          {/* Slice 16 — Institutional Valuation Intelligence */}
+          <div className="mb-12">
+            <CaseSearchPanel />
           </div>
 
           <div className="grid gap-6 md:grid-cols-2">

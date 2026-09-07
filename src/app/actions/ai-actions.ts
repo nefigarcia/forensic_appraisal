@@ -1,8 +1,6 @@
 'use server'
 
 import { prisma } from '@/lib/prisma'
-import { getSession } from '@/lib/auth-utils'
-import { guardAction } from '@/lib/rbac'
 import { logAction } from '@/lib/audit'
 import { extractFinancialData } from '@/ai/flows/ai-financial-statement-extraction-flow'
 import { aiIndustryCodeSuggestion } from '@/ai/flows/ai-industry-code-suggestion-flow'
@@ -14,6 +12,17 @@ import { generateReportNarrative } from '@/ai/flows/report-narrative-flow'
 import { revalidatePath } from 'next/cache'
 import { s3Client, BUCKET_NAME } from '@/lib/s3-client'
 import { GetObjectCommand } from '@aws-sdk/client-s3'
+import {
+  requireCaseAccess,
+  requireDocumentAccess,
+  requireFinancialValueAccess,
+  requireAnomalyFlagAccess,
+  requireCaseInsightAccess,
+  NotFoundError,
+} from '@/lib/authz'
+import { money, moneySum, serializeMoney, formatMoney } from '@/lib/money'
+import { toEvidenceCitationData } from '@/lib/citations/from-ai'
+import { withAIExecution } from '@/lib/ai/execution'
 
 async function streamToBuffer(stream: any): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -29,14 +38,28 @@ async function streamToBuffer(stream: any): Promise<Buffer> {
 // ─────────────────────────────────────────────────
 
 export async function runFinancialExtraction(caseId: string, documentId?: string) {
-  const session = await getSession()
-  guardAction(session, 'extraction:run')
+  // Resolve the document with a tenant-scoped fetch. If a specific documentId
+  // is provided we gate on it directly; otherwise we gate on the case and then
+  // look up its latest document within that same tenant scope.
+  let session
+  let doc
+  if (documentId) {
+    const ctx = await requireDocumentAccess(documentId, 'extraction:run')
+    session = ctx.session
+    doc = ctx.document
+    // Also verify the caller-supplied caseId matches — prevents mixing signals.
+    if (doc.caseId !== caseId) throw new NotFoundError()
+  } else {
+    const ctx = await requireCaseAccess(caseId, 'extraction:run')
+    session = ctx.session
+    doc = await prisma.document.findFirst({
+      where: { caseId },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (!doc) throw new NotFoundError()
+  }
 
-  const doc = await prisma.document.findFirst({
-    where: documentId ? { id: documentId } : { caseId },
-    orderBy: { createdAt: 'desc' },
-  })
-  if (!doc?.s3Key) throw new Error('No document found in custody binder.')
+  if (!doc.s3Key) throw new Error('No document found in custody binder.')
   if (doc.status === 'EXTRACTED') throw new Error('Document has already been extracted.')
 
   let documentDataUri: string
@@ -52,32 +75,61 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
     throw new Error('Failed to retrieve document from secure storage.')
   }
 
-  const result = await extractFinancialData({
-    documentDataUri, documentName: doc.name, documentTypeHint: doc.type || 'Forensic Financial Summary',
-  })
+  // Slice 8 — wrap the AI call in the execution registry. Failures during
+  // the model call surface as an AiExecution row with status=FAILURE +
+  // errorCategory and re-throw to the caller.
+  const versionId = (doc as any).currentVersionId as string | null
+  const { output: result, executionId } = await withAIExecution(
+    {
+      session,
+      caseId,
+      flowName: 'financialDocumentExtractionFlow',
+      documentVersionIds: versionId ? [versionId] : [],
+    },
+    { documentDataUri, documentName: doc.name, documentTypeHint: doc.type || 'Forensic Financial Summary' },
+    (input) => extractFinancialData(input),
+  )
 
   if (result.extractedData?.length) {
-    await prisma.financialValue.createMany({
-      data: result.extractedData.map((item) => ({
-        caseId,
-        documentId: doc.id,
-        year:          item.year          ?? 'Unknown',
-        statementType: item.statementType ?? 'N/A',
-        lineItem:      item.lineItem,
-        value:         item.value         ?? 0,
-        aiSuggestedValue: item.value      ?? 0,
-        confidence:    item.confidence    ?? 0.8,
-        sourceRef:     item.sourceRef,
-        currency:      item.currency      ?? 'USD',
-        isVerified:    false,
-        reviewStatus:  'PENDING',
-      })),
-    })
+    // Insert values one at a time so we can attach citations by id and
+    // link each row back to the AiExecution that proposed it.
+    for (const item of result.extractedData) {
+      const v = item.value ?? 0
+      const created = await prisma.financialValue.create({
+        data: {
+          caseId,
+          documentId: doc.id,
+          year:          item.year          ?? 'Unknown',
+          statementType: item.statementType ?? 'N/A',
+          lineItem:      item.lineItem,
+          value:         v,                      // Float legacy
+          aiSuggestedValue: v,                   // Float legacy
+          valueDecimal:            money(v),     // Slice 4 authoritative
+          aiSuggestedValueDecimal: money(v),
+          confidence:    item.confidence    ?? 0.8,
+          sourceRef:     item.sourceRef,
+          currency:      item.currency      ?? 'USD',
+          isVerified:    false,
+          reviewStatus:  'PENDING',
+          aiExecutionId: executionId,            // Slice 8 provenance link
+        },
+      })
+      if (versionId) {
+        const cite = toEvidenceCitationData({
+          documentVersionId: versionId,
+          parent: { financialValueId: created.id },
+          hint: (item as any).citation ?? null,
+          sourceRef: item.sourceRef ?? null,
+          extractionConfidence: item.confidence ?? null,
+        })
+        await prisma.evidenceCitation.create({ data: cite as any })
+      }
+    }
     await prisma.document.update({ where: { id: doc.id }, data: { status: 'EXTRACTED' } })
   }
 
   await logAction({
-    userId: session!.userId, action: 'RUN_EXTRACTION', caseId,
+    userId: session.userId, action: 'RUN_EXTRACTION', caseId,
     targetModel: 'Document', targetId: doc.id,
     note: `Extracted ${result.extractedData?.length ?? 0} values`,
   })
@@ -91,90 +143,84 @@ export async function runFinancialExtraction(caseId: string, documentId?: string
 // ─────────────────────────────────────────────────
 
 export async function acceptFinancialValue(id: string) {
-  const session = await getSession()
-  guardAction(session, 'value:accept')
+  const { session, value: before } = await requireFinancialValueAccess(id, 'value:accept')
 
-  const before = await prisma.financialValue.findUnique({ where: { id } })
   await prisma.financialValue.update({
     where: { id },
-    data: { reviewStatus: 'ACCEPTED', isVerified: true, overriddenBy: session!.userId, overriddenAt: new Date() },
+    data: { reviewStatus: 'ACCEPTED', isVerified: true, overriddenBy: session.userId, overriddenAt: new Date() },
   })
-  await logAction({ userId: session!.userId, action: 'ACCEPT_VALUE', caseId: before?.caseId, targetModel: 'FinancialValue', targetId: id })
-  revalidatePath(`/projects/${before?.caseId}`)
+  await logAction({ userId: session.userId, action: 'ACCEPT_VALUE', caseId: before.caseId, targetModel: 'FinancialValue', targetId: id })
+  revalidatePath(`/projects/${before.caseId}`)
 }
 
 export async function overrideFinancialValue(id: string, newValue: number, reason: string) {
-  const session = await getSession()
-  guardAction(session, 'value:override')
+  const { session, value: before } = await requireFinancialValueAccess(id, 'value:override')
 
-  const before = await prisma.financialValue.findUnique({ where: { id } })
-  if (before?.isLocked) throw new Error('This value is locked and cannot be overridden.')
+  if (before.isLocked) throw new Error('This value is locked and cannot be overridden.')
 
+  const newDecimal = money(newValue)
   await prisma.financialValue.update({
     where: { id },
     data: {
-      value: newValue, reviewStatus: 'OVERRIDDEN', isVerified: true,
-      overrideReason: reason, overriddenBy: session!.userId, overriddenAt: new Date(),
+      value:        newValue,             // Float legacy
+      valueDecimal: newDecimal,           // Slice 4 authoritative
+      reviewStatus: 'OVERRIDDEN', isVerified: true,
+      overrideReason: reason, overriddenBy: session.userId, overriddenAt: new Date(),
     },
   })
   await logAction({
-    userId: session!.userId, action: 'OVERRIDE_VALUE', caseId: before?.caseId,
+    userId: session.userId, action: 'OVERRIDE_VALUE', caseId: before.caseId,
     targetModel: 'FinancialValue', targetId: id,
-    oldValue: { value: before?.value }, newValue: { value: newValue, reason },
+    oldValue: { value: before.value }, newValue: { value: serializeMoney(newDecimal), reason },
   })
-  revalidatePath(`/projects/${before?.caseId}`)
+  revalidatePath(`/projects/${before.caseId}`)
 }
 
 export async function rejectFinancialValue(id: string, reason: string) {
-  const session = await getSession()
-  guardAction(session, 'value:reject')
+  const { session, value: before } = await requireFinancialValueAccess(id, 'value:reject')
 
-  const before = await prisma.financialValue.findUnique({ where: { id } })
   await prisma.financialValue.update({
     where: { id },
-    data: { reviewStatus: 'REJECTED', overrideReason: reason, overriddenBy: session!.userId, overriddenAt: new Date() },
+    data: { reviewStatus: 'REJECTED', overrideReason: reason, overriddenBy: session.userId, overriddenAt: new Date() },
   })
   await logAction({
-    userId: session!.userId, action: 'REJECT_VALUE', caseId: before?.caseId,
+    userId: session.userId, action: 'REJECT_VALUE', caseId: before.caseId,
     targetModel: 'FinancialValue', targetId: id, note: reason,
   })
-  revalidatePath(`/projects/${before?.caseId}`)
+  revalidatePath(`/projects/${before.caseId}`)
 }
 
 export async function toggleLockFinancialValue(id: string) {
-  const session = await getSession()
-  guardAction(session, 'value:lock')
+  const { session, value: rec } = await requireFinancialValueAccess(id, 'value:lock')
 
-  const rec    = await prisma.financialValue.findUnique({ where: { id } })
-  const locked = !rec?.isLocked
+  const locked = !rec.isLocked
   await prisma.financialValue.update({ where: { id }, data: { isLocked: locked } })
   await logAction({
-    userId: session!.userId, action: locked ? 'LOCK_VALUE' : 'UNLOCK_VALUE',
-    caseId: rec?.caseId, targetModel: 'FinancialValue', targetId: id,
+    userId: session.userId, action: locked ? 'LOCK_VALUE' : 'UNLOCK_VALUE',
+    caseId: rec.caseId, targetModel: 'FinancialValue', targetId: id,
   })
-  revalidatePath(`/projects/${rec?.caseId}`)
+  revalidatePath(`/projects/${rec.caseId}`)
 }
 
 export async function updateFinancialValue(id: string, value: number, lineItem: string) {
-  const session = await getSession()
-  guardAction(session, 'value:override')
-
-  const before  = await prisma.financialValue.findUnique({ where: { id } })
-  if (before?.isLocked) throw new Error('Value is locked.')
-  const updated = await prisma.financialValue.update({ where: { id }, data: { value, lineItem } })
+  const { value: before } = await requireFinancialValueAccess(id, 'value:override')
+  if (before.isLocked) throw new Error('Value is locked.')
+  const updated = await prisma.financialValue.update({
+    where: { id },
+    data: { value, valueDecimal: money(value), lineItem },
+  })
   revalidatePath(`/projects/${updated.caseId}`)
   return updated
 }
 
 export async function approveFinancialValues(caseId: string, statementType: string, year: string) {
-  const session = await getSession()
-  guardAction(session, 'value:approve_batch')
+  const { session } = await requireCaseAccess(caseId, 'value:approve_batch')
 
   await prisma.financialValue.updateMany({
     where: { caseId, statementType, year, isLocked: false },
     data: { isVerified: true, reviewStatus: 'ACCEPTED' },
   })
-  await logAction({ userId: session!.userId, action: 'APPROVE_BATCH', caseId, note: `${statementType} ${year}` })
+  await logAction({ userId: session.userId, action: 'APPROVE_BATCH', caseId, note: `${statementType} ${year}` })
   revalidatePath(`/projects/${caseId}`)
 }
 
@@ -183,14 +229,18 @@ export async function approveFinancialValues(caseId: string, statementType: stri
 // ─────────────────────────────────────────────────
 
 export async function askBinder(caseId: string, query: string) {
-  const session = await getSession()
-  guardAction(session, 'case:read')
+  const { session } = await requireCaseAccess(caseId, 'case:read')
 
   const financialData = await prisma.financialValue.findMany({ where: { caseId }, take: 50 })
-  return queryBinder({
-    query,
-    contextData: [{ documentName: 'Consolidated Forensic Ledger', extractedText: financialData.map(f => `${f.year} ${f.statementType}: ${f.lineItem} = ${f.value}`).join('\n') }],
-  })
+  const { output } = await withAIExecution(
+    { session, caseId, flowName: 'binderQueryFlow' },
+    {
+      query,
+      contextData: [{ documentName: 'Consolidated Forensic Ledger', extractedText: financialData.map(f => `${f.year} ${f.statementType}: ${f.lineItem} = ${f.value}`).join('\n') }],
+    },
+    (input) => queryBinder(input),
+  )
+  return output
 }
 
 // ─────────────────────────────────────────────────
@@ -198,10 +248,13 @@ export async function askBinder(caseId: string, query: string) {
 // ─────────────────────────────────────────────────
 
 export async function runIndustryAnalysis(caseId: string, description: string) {
-  const session = await getSession()
-  guardAction(session, 'extraction:run')
+  const { session } = await requireCaseAccess(caseId, 'extraction:run')
 
-  const result = await aiIndustryCodeSuggestion({ businessDescription: description })
+  const { output: result } = await withAIExecution(
+    { session, caseId, flowName: 'aiIndustryCodeSuggestionFlow' },
+    { businessDescription: description },
+    (input) => aiIndustryCodeSuggestion(input),
+  )
   const naics  = result.industryCodes.find(c => c.type === 'NAICS')?.code
   const sic    = result.industryCodes.find(c => c.type === 'SIC')?.code
 
@@ -210,7 +263,7 @@ export async function runIndustryAnalysis(caseId: string, description: string) {
     update: { suggestedIndustry: result.suggestedIndustry, naicsCode: naics, sicCode: sic },
     create: { caseId, suggestedIndustry: result.suggestedIndustry, naicsCode: naics, sicCode: sic },
   })
-  await logAction({ userId: session!.userId, action: 'RUN_INDUSTRY_ANALYSIS', caseId })
+  await logAction({ userId: session.userId, action: 'RUN_INDUSTRY_ANALYSIS', caseId })
   revalidatePath(`/projects/${caseId}`)
   return result
 }
@@ -220,15 +273,18 @@ export async function runIndustryAnalysis(caseId: string, description: string) {
 // ─────────────────────────────────────────────────
 
 export async function runTtmNormalization(caseId: string) {
-  const session = await getSession()
-  guardAction(session, 'extraction:run')
+  const { session } = await requireCaseAccess(caseId, 'extraction:run')
 
   const rawItems = await prisma.financialValue.findMany({ where: { caseId }, orderBy: { year: 'asc' } })
   if (!rawItems.length) throw new Error('No financial data found to normalize.')
 
-  const result = await normalizeTtmData({ rawItems: rawItems.map(i => ({ year: i.year, statementType: i.statementType, lineItem: i.lineItem, value: i.value, currency: i.currency })) })
+  const { output: result } = await withAIExecution(
+    { session, caseId, flowName: 'normalizeTtmFlow' },
+    { rawItems: rawItems.map(i => ({ year: i.year, statementType: i.statementType, lineItem: i.lineItem, value: i.value, currency: i.currency })) },
+    (input) => normalizeTtmData(input),
+  )
   await prisma.case.update({ where: { id: caseId }, data: { ttmReport: result as any } })
-  await logAction({ userId: session!.userId, action: 'RUN_TTM_NORMALIZATION', caseId })
+  await logAction({ userId: session.userId, action: 'RUN_TTM_NORMALIZATION', caseId })
   revalidatePath(`/projects/${caseId}`)
   return result
 }
@@ -238,17 +294,20 @@ export async function runTtmNormalization(caseId: string) {
 // ─────────────────────────────────────────────────
 
 export async function runAnomalyDetection(caseId: string) {
-  const session = await getSession()
-  guardAction(session, 'anomaly:run')
+  const { session } = await requireCaseAccess(caseId, 'anomaly:run')
 
   const financialData = await prisma.financialValue.findMany({ where: { caseId }, orderBy: { year: 'asc' } })
   if (!financialData.length) throw new Error('No financial data to analyze.')
 
   const industry = await prisma.industryClassification.findUnique({ where: { caseId } })
-  const result   = await detectAnomalies({
-    financialData: financialData.map(f => ({ id: f.id, year: f.year, statementType: f.statementType, lineItem: f.lineItem, value: f.value })),
-    industryContext: industry?.suggestedIndustry,
-  })
+  const { output: result } = await withAIExecution(
+    { session, caseId, flowName: 'anomalyDetectionFlow' },
+    {
+      financialData: financialData.map(f => ({ id: f.id, year: f.year, statementType: f.statementType, lineItem: f.lineItem, value: f.value })),
+      industryContext: industry?.suggestedIndustry,
+    },
+    (input) => detectAnomalies(input),
+  )
 
   // Clear old open flags, insert new ones
   await prisma.anomalyFlag.deleteMany({ where: { caseId, status: 'OPEN' } })
@@ -263,22 +322,20 @@ export async function runAnomalyDetection(caseId: string) {
     })
   }
 
-  await logAction({ userId: session!.userId, action: 'RUN_ANOMALY_DETECTION', caseId, note: `${result.flags?.length ?? 0} flags` })
+  await logAction({ userId: session.userId, action: 'RUN_ANOMALY_DETECTION', caseId, note: `${result.flags?.length ?? 0} flags` })
   revalidatePath(`/projects/${caseId}`)
   return result
 }
 
 export async function resolveAnomalyFlag(flagId: string, resolution: string, status: 'INVESTIGATED' | 'EXPLAINED' | 'ESCALATED') {
-  const session = await getSession()
-  guardAction(session, 'anomaly:run')
+  const { session, flag } = await requireAnomalyFlagAccess(flagId, 'anomaly:run')
 
-  const flag = await prisma.anomalyFlag.findUnique({ where: { id: flagId } })
   await prisma.anomalyFlag.update({
     where: { id: flagId },
-    data: { status, resolution, resolvedBy: session!.userId, resolvedAt: new Date() },
+    data: { status, resolution, resolvedBy: session.userId, resolvedAt: new Date() },
   })
-  await logAction({ userId: session!.userId, action: 'RESOLVE_FLAG', caseId: flag?.caseId ?? undefined, targetId: flagId, note: `${status}: ${resolution}` })
-  revalidatePath(`/projects/${flag?.caseId}`)
+  await logAction({ userId: session.userId, action: 'RESOLVE_FLAG', caseId: flag.caseId, targetId: flagId, note: `${status}: ${resolution}` })
+  revalidatePath(`/projects/${flag.caseId}`)
 }
 
 // ─────────────────────────────────────────────────
@@ -286,8 +343,7 @@ export async function resolveAnomalyFlag(flagId: string, resolution: string, sta
 // ─────────────────────────────────────────────────
 
 export async function refreshCaseInsights(caseId: string) {
-  const session = await getSession()
-  guardAction(session, 'case:read')
+  const { session } = await requireCaseAccess(caseId, 'case:read')
 
   const c = await prisma.case.findUnique({
     where: { id: caseId },
@@ -297,7 +353,7 @@ export async function refreshCaseInsights(caseId: string) {
       anomalyFlags: { where: { status: 'OPEN' } },
     },
   })
-  if (!c) throw new Error('Case not found')
+  if (!c) throw new NotFoundError()
 
   const years = [...new Set(c.financialData.map(f => f.year))]
   const { score, missing } = await (async () => {
@@ -310,13 +366,17 @@ export async function refreshCaseInsights(caseId: string) {
     return { score: Math.round(checks.filter(Boolean).length / checks.length * 100), missing: labels.filter((_, i) => !checks[i]) }
   })()
 
-  const result = await generateCaseInsights({
-    caseName: c.name, caseType: c.type, completeness: score, missingItems: missing,
-    documentCount: c.documents.length, dataPointCount: c.financialData.length,
-    yearsOfData: years, industry: c.industry?.suggestedIndustry,
-    anomalyCount: c.anomalyFlags.length, addBackCount: c.addBacks.length,
-    valuationCount: c.valuationModels.length,
-  })
+  const { output: result } = await withAIExecution(
+    { session, caseId, flowName: 'insightsFlow' },
+    {
+      caseName: c.name, caseType: c.type, completeness: score, missingItems: missing,
+      documentCount: c.documents.length, dataPointCount: c.financialData.length,
+      yearsOfData: years, industry: c.industry?.suggestedIndustry,
+      anomalyCount: c.anomalyFlags.length, addBackCount: c.addBacks.length,
+      valuationCount: c.valuationModels.length,
+    },
+    (input) => generateCaseInsights(input),
+  )
 
   // Replace non-dismissed insights
   await prisma.caseInsight.deleteMany({ where: { caseId, isDismissed: false } })
@@ -334,8 +394,7 @@ export async function refreshCaseInsights(caseId: string) {
 }
 
 export async function dismissInsight(insightId: string) {
-  const session = await getSession()
-  if (!session) throw new Error('Unauthorized')
+  await requireCaseInsightAccess(insightId)
   await prisma.caseInsight.update({ where: { id: insightId }, data: { isDismissed: true } })
 }
 
@@ -344,33 +403,41 @@ export async function dismissInsight(insightId: string) {
 // ─────────────────────────────────────────────────
 
 export async function draftReportSection(caseId: string, section: Parameters<typeof generateReportNarrative>[0]['section'], existingText?: string) {
-  const session = await getSession()
-  guardAction(session, 'report:generate')
+  const { session } = await requireCaseAccess(caseId, 'report:generate')
 
   const c = await prisma.case.findUnique({
     where: { id: caseId },
     include: { industry: true, valuationModels: { orderBy: { createdAt: 'desc' }, take: 1 }, addBacks: true, financialData: true },
   })
-  if (!c) throw new Error('Case not found')
+  if (!c) throw new NotFoundError()
 
   const latestModel = c.valuationModels[0]
-  const addBackTotal = c.addBacks.reduce((s, a) => s + ((a.ttm ?? 0)), 0)
+  // Slice 4: decimal-safe sum. Prefer the Decimal shadow column when
+  // populated; fall back to the Float column otherwise (un-migrated rows).
+  const addBackTotalD = moneySum(
+    c.addBacks.map(a => (a as any).ttmDecimal ?? a.ttm ?? 0),
+  )
   const years = [...new Set(c.financialData.map(f => f.year))].sort()
 
-  return generateReportNarrative({
-    section, caseName: c.name, caseType: c.type, clientName: c.client,
-    valuationDate:   c.valuationDate?.toISOString().split('T')[0],
-    standardOfValue: c.standardOfValue ?? 'FMV',
-    purposeOfValue:  c.purposeOfValue ?? undefined,
-    industry:        c.industry?.suggestedIndustry,
-    naicsCode:       c.industry?.naicsCode ?? undefined,
-    concludedValue:  latestModel?.indicatedValue ?? undefined,
-    ebitda:          latestModel?.ebitda ?? undefined,
-    multiplier:      latestModel?.multiplier ?? undefined,
-    financialSummary: `${years.length} years of data (${years.join(', ')})`,
-    addBackSummary:  `${c.addBacks.length} add-backs, total TTM: $${addBackTotal.toLocaleString()}`,
-    existingText,
-  })
+  const { output } = await withAIExecution(
+    { session, caseId, flowName: 'reportNarrativeFlow' },
+    {
+      section, caseName: c.name, caseType: c.type, clientName: c.client,
+      valuationDate:   c.valuationDate?.toISOString().split('T')[0],
+      standardOfValue: c.standardOfValue ?? 'FMV',
+      purposeOfValue:  c.purposeOfValue ?? undefined,
+      industry:        c.industry?.suggestedIndustry,
+      naicsCode:       c.industry?.naicsCode ?? undefined,
+      concludedValue:  latestModel?.indicatedValue ?? undefined,
+      ebitda:          latestModel?.ebitda ?? undefined,
+      multiplier:      latestModel?.multiplier ?? undefined,
+      financialSummary: `${years.length} years of data (${years.join(', ')})`,
+      addBackSummary:  `${c.addBacks.length} add-backs, total TTM: ${formatMoney(addBackTotalD)}`,
+      existingText,
+    },
+    (input) => generateReportNarrative(input),
+  )
+  return output
 }
 
 // ─────────────────────────────────────────────────
@@ -378,8 +445,7 @@ export async function draftReportSection(caseId: string, section: Parameters<typ
 // ─────────────────────────────────────────────────
 
 export async function getAuditLog(caseId: string) {
-  const session = await getSession()
-  guardAction(session, 'audit:read')
+  await requireCaseAccess(caseId, 'audit:read')
 
   return prisma.auditLog.findMany({
     where: { caseId },
