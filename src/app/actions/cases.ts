@@ -77,7 +77,7 @@ export async function createCase(formData: FormData) {
 export async function getCaseDetails(id: string) {
   await requireCaseAccess(id, 'case:read')
 
-  return prisma.case.findUnique({
+  const row = await prisma.case.findUnique({
     where: { id },
     include: {
       documents:      { orderBy: { createdAt: 'desc' } },
@@ -89,6 +89,33 @@ export async function getCaseDetails(id: string) {
       insights:       { orderBy: { createdAt: 'desc' }, where: { isDismissed: false } },
     },
   })
+  return serializeForClient(row)
+}
+
+/**
+ * Next.js 15 refuses to send `Prisma.Decimal`, `BigInt`, or other
+ * non-plain objects across the server→client server-action boundary.
+ * Slice-4 introduced Decimal shadow columns on FinancialValue,
+ * AddBack, and ValuationModel; this helper converts them to strings
+ * so the case detail payload round-trips cleanly.
+ *
+ * BigInt (used by DocumentVersion.sizeBytes) is also converted.
+ */
+function serializeForClient<T>(value: T): T {
+  if (value === null || value === undefined) return value
+  if (typeof value === 'bigint') return (value.toString() as unknown) as T
+  if (typeof value !== 'object') return value
+  // decimal.js / Prisma.Decimal instances are objects with a `.toString()`
+  // that produces a decimal-safe string. Detect by constructor name.
+  const ctor = (value as { constructor?: { name?: string } }).constructor?.name
+  if (ctor === 'Decimal') return ((value as any).toString() as unknown) as T
+  if (value instanceof Date) return value
+  if (Array.isArray(value)) return value.map(serializeForClient) as unknown as T
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    out[k] = serializeForClient(v)
+  }
+  return out as T
 }
 
 export async function saveValuation(
